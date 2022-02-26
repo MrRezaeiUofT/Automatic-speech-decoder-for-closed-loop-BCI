@@ -1,4 +1,5 @@
 from speech_utils import *
+from GMM_utils import *
 import pandas as pd
 from sklearn import preprocessing
 import statsmodels.api as sm
@@ -31,9 +32,6 @@ plt.show()
 acustic_feature_DF=pd.DataFrame(mfccs_features.transpose(), columns=['f_'+str(i) for i in range(mfccs_features.shape[0])])
 dt_features = 1/(mfccs_features.shape[1]/(signal.shape[0]/sr))
 
-
-
-
 # gathering the information
 
 phones_event = np.zeros(mfccs_features.shape[1],)
@@ -59,13 +57,24 @@ print(phones_NgramModel.map_to_probs(('HH',)))
 plt.figure()
 acustic_feature_DF.phone.hist()
 ## GLM binomial GLM fit for events
+#
+# X=acustic_feature_DF[['f_'+str(i) for i in range(mfccs_features.shape[0])]].to_numpy()
+# Y=phones_event
+# bin_GLM = sm.GLM(Y, X, family=sm.families.Binomial())
+# bin_GLM_results = bin_GLM.fit()
+# # print(bin_GLM_results.summary())
+# y_hat=bin_GLM_results.predict(X)
+# y_hat[y_hat>=.5]= 1
+# y_hat[y_hat<.5]= 0
+# print('binomial GLM error_rate=%f'%(100*np.sum(np.abs(Y-y_hat))/y_hat.shape[0]))
 
-X=acustic_feature_DF[['f_'+str(i) for i in range(mfccs_features.shape[0])]].to_numpy()
-Y=phones_event
-bin_GLM = sm.GLM(Y, X, family=sm.families.Binomial())
-bin_GLM_results = bin_GLM.fit()
-# print(bin_GLM_results.summary())
-y_hat=bin_GLM_results.predict(X)
-y_hat[y_hat>=.5]= 1
-y_hat[y_hat<.5]= 0
-print('binomial GLM error_rate=%f'%(100*np.sum(np.abs(Y-y_hat))/y_hat.shape[0]))
+# acustic model by GMMs
+gmm_number_Comp=2
+acustic_model={}
+
+for phone_id in acustic_feature_DF.phone.unique():
+    X = acustic_feature_DF[['f_'+str(i) for i in range(mfccs_features.shape[0])]][acustic_feature_DF.phone == phone_id]
+    if X.shape[0]>1:
+        acustic_model[phone_id]=GaussianMixture(n_components=gmm_number_Comp).fit(X)
+    else:
+        acustic_model[phone_id]= None
