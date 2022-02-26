@@ -78,3 +78,6 @@ for phone_id in acustic_feature_DF.phone.unique():
         acustic_model[phone_id]=GaussianMixture(n_components=gmm_number_Comp).fit(X)
     else:
         acustic_model[phone_id]= None
+
+# Bayesian filtering
+
