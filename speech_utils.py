@@ -152,3 +152,9 @@ def listToString(s):
 
     # return string
     return (str1.join(s))
+
+def convert_phone_phnoe_id(input,key_covert):
+    output={}
+    for key,value in input.items():
+        output[(key_covert[key])]=value
+    return output
