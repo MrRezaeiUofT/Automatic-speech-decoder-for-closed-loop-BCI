@@ -1,9 +1,9 @@
 from speech_utils import *
 import pandas as pd
 N_gram=2
-phones_DF=pd.read_csv('./Datasets/DM1008/sub-DM1008_ses-intraop_task-lombard_annot-produced-phonemes.tsv',sep='\t')
-sentences_DF=pd.read_csv('./Datasets/DM1008/sub-DM1008_ses-intraop_task-lombard_annot-produced-sentences.tsv',sep='\t')
-words_DF=pd.read_csv('./Datasets/DM1008/sub-DM1008_ses-intraop_task-lombard_annot-produced-words.tsv',sep='\t')
+phones_DF=pd.read_csv('../Datasets/DM1008/sub-DM1008_ses-intraop_task-lombard_annot-produced-phonemes.tsv', sep='\t')
+sentences_DF=pd.read_csv('../Datasets/DM1008/sub-DM1008_ses-intraop_task-lombard_annot-produced-sentences.tsv', sep='\t')
+words_DF=pd.read_csv('../Datasets/DM1008/sub-DM1008_ses-intraop_task-lombard_annot-produced-words.tsv', sep='\t')
 
 # bigram_words=get_ngrams(N_gram,words_DF['word'].to_list() )
 # sentences N-gram model

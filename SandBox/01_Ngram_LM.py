@@ -143,7 +143,7 @@ def create_ngram_model(n, path):
 
 if __name__ == "__main__":
     start = time.time()
-    m = create_ngram_model(6, './Datasets/Frankenstein.txt')
+    m = create_ngram_model(6, '../Datasets/Frankenstein.txt')
 
     print (f'Language Model creating time: {time.time() - start}')
     start = time.time()
