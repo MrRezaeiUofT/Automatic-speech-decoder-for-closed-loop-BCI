@@ -33,10 +33,10 @@ y=acustic_feature_DF['phone_id'].to_numpy()
 
 onehot_encoder = OneHotEncoder(sparse=False)
 onehot_encoded_y = onehot_encoder.fit_transform(y.reshape([-1,1]))
-for hk in range(10):
+for hk in range(3):
     XDesign=calDesignMatrix_V2(X,hk+1)
     RNN_model= get_model(XDesign,onehot_encoded_y)
-    RNN_model.fit(XDesign,onehot_encoded_y,batch_size=100, epochs=150,verbose=0)
+    RNN_model.fit(XDesign,onehot_encoded_y,batch_size=1000, epochs=150,verbose=0)
     y_hat_prob=RNN_model.predict(XDesign)
     # print('acc=%f-percent\n'%(accuracy_score(y,y_hat)))
     y_hat = np.argmax(y_hat_prob,axis=-1)
@@ -44,7 +44,7 @@ for hk in range(10):
     ''' DDD filtering'''
 
     p_wXT = np.zeros((y_hat_prob.shape[0],y_hat_prob.shape[1]))
-    pwtwt1 = get_state_transition_p_bigram(phones_code_dic,phones_NgramModel)
+    pwtwt1 = get_state_transition_p_bigram(phones_code_dic,phones_NgramModel)#.transpose()
     # pwtwt1= pwtwt1/(pwtwt1.shape[0])
     # plt.imshow(pwtwt1)
 
@@ -55,7 +55,9 @@ for hk in range(10):
         else:
 
             p_prev= pwtwt1.dot(y_hat_prob[ii-1])
+            p_prev/=p_prev.sum()
             one_step_pred = pwtwt1.dot( p_wXT[ii-1, :])
+            one_step_pred/=one_step_pred.sum()
             p_wXT[ii,:]=(y_hat_prob[ii]/p_prev) *one_step_pred
 
 

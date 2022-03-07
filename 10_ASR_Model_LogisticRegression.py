@@ -32,7 +32,7 @@ X=acustic_feature_DF[['f_'+str(i) for i in range(mfccs_features_len)]].to_numpy(
 y=acustic_feature_DF['phone_id'].to_numpy()
 model_LR = LogisticRegression(multi_class='multinomial', solver='lbfgs')
 
-for hk in range(20):
+for hk in range(3):
     XDesign=calDesignMatrix_V2(X,hk+1).reshape([X.shape[0],-1])
     model_LR.fit(XDesign, y)
     y_hat=model_LR.predict(XDesign)
@@ -53,7 +53,9 @@ for hk in range(20):
         else:
 
             p_prev= pwtwt1.dot(y_hat_prob[ii-1])
+            p_prev /= p_prev.sum()
             one_step_pred = pwtwt1.dot( p_wXT[ii-1, :])
+            one_step_pred /= one_step_pred.sum()
             p_wXT[ii,:]=(y_hat_prob[ii]/p_prev) *one_step_pred
 
 
