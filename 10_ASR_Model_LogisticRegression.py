@@ -56,7 +56,7 @@ for hk in range(3):
             p_prev /= p_prev.sum()
             one_step_pred = pwtwt1.dot( p_wXT[ii-1, :])
             one_step_pred /= one_step_pred.sum()
-            p_wXT[ii,:]=(y_hat_prob[ii]/p_prev) *one_step_pred
+            p_wXT[ii,:]=(y_hat_prob[ii]) *one_step_pred
 
 
     y_hat_DDD=np.argmax(p_wXT, axis=-1)

@@ -2,7 +2,7 @@ from GMM_utils import *
 from DDD_utils import *
 import pandas as pd
 from speech_utils import *
-
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.metrics import accuracy_score
 
@@ -33,12 +33,15 @@ y=acustic_feature_DF['phone_id'].to_numpy()
 
 onehot_encoder = OneHotEncoder(sparse=False)
 onehot_encoded_y = onehot_encoder.fit_transform(y.reshape([-1,1]))
-for hk in range(3):
+for hk in range(20):
     XDesign=calDesignMatrix_V2(X,hk+1)
     RNN_model= get_model(XDesign,onehot_encoded_y)
-    RNN_model.fit(XDesign,onehot_encoded_y,batch_size=1000, epochs=150,verbose=0)
-    y_hat_prob=RNN_model.predict(XDesign)
-    # print('acc=%f-percent\n'%(accuracy_score(y,y_hat)))
+    XDesign_tr, XDesign_te,onehot_encoded_y_tr, onehot_encoded_y_te,y_tr, y_te = train_test_split(XDesign,onehot_encoded_y,y, test_size=.3)
+    RNN_model.fit(XDesign_tr,onehot_encoded_y_tr,batch_size=1000, epochs=150,verbose=0)
+    y_hat_prob_tr = RNN_model.predict(XDesign_tr)
+    y_hat_tr = np.argmax(y_hat_prob_tr, axis=-1)
+
+    y_hat_prob=RNN_model.predict(XDesign_te)
     y_hat = np.argmax(y_hat_prob,axis=-1)
 
     ''' DDD filtering'''
@@ -58,8 +61,10 @@ for hk in range(3):
             p_prev/=p_prev.sum()
             one_step_pred = pwtwt1.dot( p_wXT[ii-1, :])
             one_step_pred/=one_step_pred.sum()
-            p_wXT[ii,:]=(y_hat_prob[ii]/p_prev) *one_step_pred
+            p_wXT[ii,:]=(y_hat_prob[ii]) *one_step_pred
 
 
     y_hat_DDD=np.argmax(p_wXT, axis=-1)
-    print('hk =%d----prediction_acc=%f------------DDD_acc=%f-percent\n'%(hk,accuracy_score(y,y_hat),accuracy_score(y,y_hat_DDD)))
+    print('hk =%d----prediction_acc=%f------------DDD_acc=%f-percent, train-acc=%f-\n'%(hk,accuracy_score(y_te,y_hat),
+                                                                                        accuracy_score(y_te,y_hat_DDD),
+                                                                                        accuracy_score(y_tr,y_hat_tr)))

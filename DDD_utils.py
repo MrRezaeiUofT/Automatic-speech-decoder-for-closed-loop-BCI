@@ -58,8 +58,9 @@ def get_model(In,out):
 
 
     # spec_x = layers.GRU(10, activation='tanh', dropout=.2, recurrent_dropout=.2, return_sequences=True)(spec_start)
-    spec_x = layers.GRU(In.shape[1], activation='tanh', dropout=.2, recurrent_dropout=.2, return_sequences=False)(spec_start)
-    spec_x=layers.Dense(out.shape[1])(spec_x)
+    spec_x = layers.GRU(In.shape[1]*5, activation='tanh', dropout=.2, recurrent_dropout=.2, return_sequences=False)(spec_start)
+    spec_x=layers.Dense(out.shape[1]*5)(spec_x)
+    spec_x = layers.Dense(out.shape[1] )(spec_x)
     out = layers.Activation('softmax')(spec_x)
     _model = Model(inputs=spec_start, outputs=out)
     _model.compile(optimizer='Adam', loss='binary_crossentropy',metrics = ['accuracy'])
