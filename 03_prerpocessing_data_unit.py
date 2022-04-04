@@ -10,7 +10,7 @@ sentences_DF=pd.read_csv(patient_folder+'sub-DM1008_ses-intraop_task-lombard_ann
 words_DF=pd.read_csv(patient_folder+'sub-DM1008_ses-intraop_task-lombard_annot-produced-words.tsv',sep='\t')
 audio_file = patient_folder+"sub-DM1008_ses-intraop_task-lombard_run-03_recording-directionalmicaec_physio.wav"
 audio_strt_time = 63623.7147033506
-phones_DF.phoneme.hist()
+# phones_DF.phoneme.hist()
 
 '''audio and text synchronization'''
 phones_DF['onset'] = phones_DF['onset']-audio_strt_time
@@ -33,7 +33,9 @@ dt_features = 1/(mfccs_features.shape[1]/(signal.shape[0]/sr))
 ''' gathering the information'''
 phones_event = np.zeros(mfccs_features.shape[1],)
 phones_duration = np.zeros(mfccs_features.shape[1],)
+delay_btwn_phoneme = np.zeros(mfccs_features.shape[1],)
 phones_type =  []
+last_phoneme_time=0
 for ii in range(phones_event.shape[0]):
     time_int = [ii*dt_features,(ii+1)*dt_features]
     identified_phones = phones_DF.phoneme.loc[(phones_DF.onset<=time_int[1]) & (phones_DF.onset>=time_int[0])]
@@ -48,6 +50,8 @@ for ii in range(phones_event.shape[0]):
         # One phoneme for the time interval
         phones_event[ii] = 1
         phones_duration[ii] = identified_phone_duration//dt_features
+        delay_btwn_phoneme[ii] = ii - last_phoneme_time
+        last_phoneme_time = ii
         phones_type.append( identified_phones.to_list()[0])
     else:
         # select the longest phoneme for the time interval
@@ -55,21 +59,24 @@ for ii in range(phones_event.shape[0]):
         phones_event[ii] = 2
         phones_duration[ii] = identified_phone_duration.to_numpy()[selected]//dt_features
         phones_type.append(identified_phones.to_list()[selected[0]])
+        delay_btwn_phoneme[ii] = ii - last_phoneme_time
+        last_phoneme_time = ii
 acustic_feature_DF['phone_event']=phones_event
 acustic_feature_DF['phone']=phones_type
 acustic_feature_DF['phone_duration']=phones_duration
+acustic_feature_DF['diff_from_last_phone']=delay_btwn_phoneme
 
-# consider all length of thee phones
-for ii in range(len(acustic_feature_DF)):
-    print(ii)
-    if acustic_feature_DF['phone_event'][ii] !=0:
-        number_e=int(acustic_feature_DF['phone_duration'][ii])
-        acustic_feature_DF['phone_event'][ii:ii+number_e]=acustic_feature_DF['phone_event'][ii]
-        acustic_feature_DF['phone'][ii:ii + number_e] = acustic_feature_DF['phone'][ii]
+# consider the whole durtation of thee phones
+# for ii in range(len(acustic_feature_DF)):
+#     print(ii)
+#     if acustic_feature_DF['phone_event'][ii] !=0:
+#         number_e=int(acustic_feature_DF['phone_duration'][ii])
+#         acustic_feature_DF['phone_event'][ii:ii+number_e]=acustic_feature_DF['phone_event'][ii]
+#         acustic_feature_DF['phone'][ii:ii + number_e] = acustic_feature_DF['phone'][ii]
 
 
 '''save the result'''
-acustic_feature_DF.to_csv(patient_folder+'preprocessed_dataframe.csv',index=False)
+acustic_feature_DF.to_csv(patient_folder+'preprocessed_dataframe_onset.csv',index=False)
 acustic_feature_DF.phone.hist()
 
 

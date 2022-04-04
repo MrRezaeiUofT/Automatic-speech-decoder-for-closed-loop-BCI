@@ -6,6 +6,7 @@ import numpy as np
 import string
 import random
 import time
+import seaborn as sn
 from typing import List
 
 
@@ -43,8 +44,6 @@ def tokenize(text: str) -> List[str]:
         text = text.replace(punct, ' '+punct+' ')
     t = text.split()
     return t
-
-
 
 class NgramModel(object):
 
@@ -158,3 +157,53 @@ def convert_phone_phnoe_id(input,key_covert):
     for key,value in input.items():
         output[(key_covert[key])]=value
     return output
+
+
+def matrix_show(matr, labels,title):
+    fig, ax = plt.subplots()
+    im = ax.imshow(matr)
+
+    # Show all ticks and label them with the respective list entries
+    ax.set_xticks(np.arange(matr.shape[0]), labels=labels)
+    ax.set_yticks(np.arange(matr.shape[1]), labels=labels)
+
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+             rotation_mode="anchor")
+
+    # Loop over data dimensions and create text annotations.
+    for i in range(matr.shape[1]):
+        for j in range(matr.shape[0]):
+            text = ax.text(j, i, matr[i, j],
+                           ha="center", va="center", color="w")
+
+    ax.set_title("Diffusion matrix pred "+ title)
+    fig.tight_layout()
+    plt.show()
+
+def get_delay_btwn_phoneme(acustic_feature_DF):
+    delay_model = np.zeros((len(acustic_feature_DF.phone_id.unique()), len(acustic_feature_DF.phone_id.unique()), 2))
+    df_delay_model = acustic_feature_DF[acustic_feature_DF.phone_id >= 2].reset_index()
+    # diagonal elememnts
+    for phoneme_id in acustic_feature_DF.phone_id.unique():
+        delay_model[phoneme_id, phoneme_id, 0] = acustic_feature_DF.phone_duration[
+            acustic_feature_DF.phone_id == phoneme_id].mean()
+        delay_model[phoneme_id, phoneme_id, 1] = acustic_feature_DF.phone_duration[
+            acustic_feature_DF.phone_id == phoneme_id].std()
+
+    for phoneme_id_t in df_delay_model.phone_id.unique():
+        phn_t_index = df_delay_model.index[df_delay_model.phone_id == phoneme_id_t].to_numpy()
+        phn_t1_index = phn_t_index - 1
+        phn_t1_index[phn_t1_index < 0] = 0
+        df_t1 = df_delay_model.iloc[phn_t1_index]
+        for ii in df_t1.phone_id.unique():
+            delay_model[ phoneme_id_t,ii, 0] = df_t1.diff_from_last_phone[
+                df_t1.phone_id == ii].mean()
+            delay_model[ phoneme_id_t,ii, 1] = df_t1.diff_from_last_phone[
+                df_t1.phone_id == ii].std()
+
+    # f, axes = plt.subplots(1, 2, figsize=(14, 7), sharey=True, sharex=True)
+    # sn.heatmap(np.round(delay_model[:, :, 0]), ax=axes[0], annot=True)
+    # sn.heatmap(np.round(delay_model[:, :, 1]), ax=axes[1], annot=True)
+    return delay_model
+

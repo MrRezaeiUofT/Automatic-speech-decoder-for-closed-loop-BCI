@@ -1,6 +1,7 @@
 from GMM_utils import *
 from DDD_utils import *
 import pandas as pd
+from sklearn.metrics import confusion_matrix
 from speech_utils import *
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder
@@ -17,6 +18,7 @@ acustic_feature_DF=pd.read_csv(patient_folder+'preprocessed_dataframe.csv')
 acustic_feature_DF['phone'][acustic_feature_DF['phone'] == ' ']= 'DDD'
 ''' assign id to phones'''
 phones_code_dic = dict(zip(acustic_feature_DF.phone.unique(), np.arange(acustic_feature_DF.phone.nunique())))
+phones_code_dic_inver = {v: k for k, v in phones_code_dic.items()}
 acustic_feature_DF['phone_id']=0
 acustic_feature_DF['phone_id']= acustic_feature_DF['phone'].apply(lambda x: phones_code_dic[x])
 
@@ -29,6 +31,7 @@ phones_NgramModel.update(sentence=listToString(acustic_feature_DF['phone'].to_li
 
 ''' logistic regression model as discriminative model'''
 X=acustic_feature_DF[['f_'+str(i) for i in range(mfccs_features_len)]].to_numpy()
+
 y=acustic_feature_DF['phone_id'].to_numpy()
 
 onehot_encoder = OneHotEncoder(sparse=False)
@@ -68,3 +71,7 @@ for hk in range(20):
     print('hk =%d----prediction_acc=%f------------DDD_acc=%f-percent, train-acc=%f-\n'%(hk,accuracy_score(y_te,y_hat),
                                                                                         accuracy_score(y_te,y_hat_DDD),
                                                                                         accuracy_score(y_tr,y_hat_tr)))
+
+matrix_show(confusion_matrix(y_te,y_hat), phones_code_dic.keys(), '4D model result-test')
+matrix_show(confusion_matrix(y_te,y_hat_DDD), phones_code_dic.keys(), 'DNN model result-test')
+matrix_show(confusion_matrix(y_tr,y_hat_tr), phones_code_dic.keys(), 'DNN model result-train')
