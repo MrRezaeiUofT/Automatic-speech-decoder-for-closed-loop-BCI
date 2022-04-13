@@ -1,4 +1,5 @@
 from speech_utils import *
+from neural_utils import *
 from GMM_utils import *
 import pandas as pd
 from sklearn import preprocessing
@@ -10,15 +11,18 @@ phones_DF=pd.read_csv(patient_folder+'sub-DM1008_ses-intraop_task-lombard_annot-
 sentences_DF=pd.read_csv(patient_folder+'sub-DM1008_ses-intraop_task-lombard_annot-produced-sentences.tsv',sep='\t')
 words_DF=pd.read_csv(patient_folder+'sub-DM1008_ses-intraop_task-lombard_annot-produced-words.tsv',sep='\t')
 audio_file = patient_folder+"sub-DM1008_ses-intraop_task-lombard_run-03_recording-directionalmicaec_physio.wav"
+df_neural = get_neural_DM1008(patient_folder + 'neural_data_trial3.mat')
+# audio_file = patient_folder+"sub-DM1008_ses-intraop_task-lombard_run-03_recording-respiration_physio.wav"
 audio_strt_time = 63623.7147033506
 mfccs_features_len = 39
+neural_smaping_rate=1000
 M = 51
 tau = 1.0
 '''audio and text synchronization'''
 phones_DF['onset'] = phones_DF['onset']-audio_strt_time
 sentences_DF['onset'] = sentences_DF['onset']-audio_strt_time
 words_DF['onset'] = words_DF['onset']-audio_strt_time
-
+df_neural['time'] = df_neural['time']- df_neural['time'][0]
 ''' Extracting MFCCs'''
 mfccs_features, sr,signal_ac = mfcc_feature_extraction(audio_file, 13)
 dt_features = 1/(mfccs_features.shape[1]/(signal_ac.shape[0]/sr))
@@ -35,7 +39,9 @@ acustic_feature_DF=pd.DataFrame(mfccs_features.transpose(), columns=['f_'+str(i)
 
 ''' Sentence specified model'''
 Trial_ID=1
-words_DF_trial = words_DF#[words_DF.trial_id == Trial_ID]
+words_DF_trial = words_DF[words_DF.trial_id == Trial_ID]
+# words_DF_trial = words_DF[:100]
+''''''
 
 
 
@@ -49,10 +55,12 @@ ac_DF_trial = acustic_feature_DF.iloc[snt_onset_indx:snt_onset_indx + snt_durati
 wrd_event = np.zeros(ac_DF_trial.shape[0],)
 wrd_duration = np.zeros(ac_DF_trial.shape[0],)
 delay_btwn_wrd = np.zeros(ac_DF_trial.shape[0],)
+neural_feature=np.zeros((ac_DF_trial.shape[0],df_neural.shape[1]))
 wrd_type =  []
 last_wrd_time=0
 for ii in range(wrd_event.shape[0]):
     time_int = [snt_onset+ii*dt_features,snt_onset+(ii+1)*dt_features]
+    neural_feature[ii,:] =  df_neural.loc[np.floor(time_int[0]*neural_smaping_rate):np.floor(time_int[1]*neural_smaping_rate)].mean().to_numpy()
     identified_wrd = words_DF_trial.word.loc[(words_DF_trial.onset<=time_int[1]) & (words_DF_trial.onset>=time_int[0])]
     identified_wrd_duration = words_DF_trial.duration.loc[(words_DF_trial.onset <= time_int[1]) & (words_DF_trial.onset >= time_int[0])]
     if (len(identified_wrd) == 0) or (identified_wrd.to_list()[0] == 'sp') :
@@ -89,18 +97,30 @@ ac_DF_trial['synth_CIF']=ac_DF_trial['synth_CIF']/ac_DF_trial['synth_CIF'].max()
 # plt.plot(ac_DF_trial['synth_CIF'])
 
 ''' decoding model with GLM'''
+ac_DF_trial=ac_DF_trial.reset_index()
 
-X=ac_DF_trial[['f_'+str(i) for i in range(mfccs_features_len)]].to_numpy()
+# select from either neural or acustic features
+# X=ac_DF_trial[['f_'+str(i) for i in range(mfccs_features_len)]].to_numpy()
+X = neural_feature[:,1:]
+
 X = sm.add_constant(X)
 y=ac_DF_trial['synth_CIF'].to_numpy()
 pos_GLM = sm.GLM(y, X, family=sm.families.Poisson())
 # pos_GLM_results = pos_GLM.fit()
-pos_GLM_results = pos_GLM.fit_regularized(L1_wt=1)
+pos_GLM_results = pos_GLM.fit_regularized(L1_wt=.0)
 # print(pos_GLM_results.summary())
 y_hat = pos_GLM_results.predict(X)
-y_hat/=np.max(y_hat)
+# y_hat/=np.max(y_hat)
 plt.figure()
-plt.plot(y, 'r')
-plt.plot(y_hat, 'b')
+plt.plot(y, 'r',label = 'True_val')
+plt.plot(y_hat, 'b',label = 'Pred_val')
+for ii in ac_DF_trial.wrd.unique():
+    if ii == 'NAN':
+        pass
+    else:
+        plt.annotate(ii, (ac_DF_trial[ac_DF_trial.wrd == ii].index.to_numpy()[0] ,.8),rotation=90)
+        # plt.text(ac_DF_trial[ac_DF_trial.wrd == ii].index.to_numpy()[0] ,1, ii)
+plt.title(str(ac_DF_trial.wrd.unique().tolist()))
+plt.legend()
 plt.show()
 
