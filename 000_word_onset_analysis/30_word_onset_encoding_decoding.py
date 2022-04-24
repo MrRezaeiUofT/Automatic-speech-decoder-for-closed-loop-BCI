@@ -3,21 +3,36 @@ from neural_utils import *
 from GMM_utils import *
 import pandas as pd
 from sklearn import preprocessing
-from scipy import signal
-import statsmodels.api as sm
 
+import statsmodels.api as sm
+def calDesignMatrix_V2(X,h):
+    '''
+
+    :param X: [samples*Feature]
+    :param h: hist
+    :return: [samples*hist*Feature]
+
+    '''
+    PadX = np.zeros([h , X.shape[1]])
+    PadX =np.concatenate([PadX,X],axis=0)
+    XDsgn=np.zeros([X.shape[0], h, X.shape[1]])
+    # print(PadX.shapepe)
+    for i in range(0,XDsgn.shape[0]):
+         #print(i)
+         XDsgn[i, : , :]= (PadX[i:h+i,:])
+    return XDsgn
+Use_neural_fea= False
 patient_folder='../Datasets/DM1008/'
 phones_DF=pd.read_csv(patient_folder+'sub-DM1008_ses-intraop_task-lombard_annot-produced-phonemes.tsv',sep='\t')
 sentences_DF=pd.read_csv(patient_folder+'sub-DM1008_ses-intraop_task-lombard_annot-produced-sentences.tsv',sep='\t')
 words_DF=pd.read_csv(patient_folder+'sub-DM1008_ses-intraop_task-lombard_annot-produced-words.tsv',sep='\t')
 audio_file = patient_folder+"sub-DM1008_ses-intraop_task-lombard_run-03_recording-directionalmicaec_physio.wav"
 df_neural = get_neural_DM1008(patient_folder + 'neural_data_trial3.mat')
-# audio_file = patient_folder+"sub-DM1008_ses-intraop_task-lombard_run-03_recording-respiration_physio.wav"
+audio_file_res = patient_folder+"sub-DM1008_ses-intraop_task-lombard_run-03_recording-respiration_physio.wav"
 audio_strt_time = 63623.7147033506
 mfccs_features_len = 39
 neural_smaping_rate=1000
-M = 51
-tau = 1.0
+hist_len = 5
 '''audio and text synchronization'''
 phones_DF['onset'] = phones_DF['onset']-audio_strt_time
 sentences_DF['onset'] = sentences_DF['onset']-audio_strt_time
@@ -27,6 +42,11 @@ df_neural['time'] = df_neural['time']- df_neural['time'][0]
 mfccs_features, sr,signal_ac = mfcc_feature_extraction(audio_file, 13)
 dt_features = 1/(mfccs_features.shape[1]/(signal_ac.shape[0]/sr))
 mfccs_features = preprocessing.scale(mfccs_features, axis=1)
+
+# mfccs_features_res, sr_res,signal_ac_res = mfcc_feature_extraction(audio_file_res, 13)
+# mfccs_features_res= preprocessing.scale(mfccs_features_res, axis=1)
+#
+# mfccs_features = np.concatenate([mfccs_features_res,mfccs_features],axis=0)
 # plt.figure(figsize=(25, 10))
 # out=librosa.display.specshow(mfccs_features,
 #                          x_axis="time",
@@ -38,89 +58,114 @@ acustic_feature_DF=pd.DataFrame(mfccs_features.transpose(), columns=['f_'+str(i)
 
 
 ''' Sentence specified model'''
-Trial_ID=1
-words_DF_trial = words_DF[words_DF.trial_id == Trial_ID]
-# words_DF_trial = words_DF[:100]
-''''''
+Trial_IDs=sentences_DF.trial_id[sentences_DF.sentence == sentences_DF.sentence.unique()[1]].to_list()
+Trial_IDs_tr=Trial_IDs[2:]
+Trial_IDs_te= Trial_IDs[:2]
 
+X_tr,y_tr,X_te,y_te, ac_DF_trial_tr, ac_DF_trial_te, featurelist, events_times_tr, events_times_te = get_tr_te(words_DF, sentences_DF, acustic_feature_DF, df_neural,
+                                                                  dt_features, neural_smaping_rate,Trial_IDs_tr, Trial_IDs_te, mfccs_features_len,
+              Use_neural_fea)
 
-
-snt_duration = words_DF_trial.duration.sum()
-snt_onset = sentences_DF[sentences_DF.trial_id == Trial_ID].onset.to_numpy().squeeze()
-snt_onset_indx = int(np.floor(snt_onset // dt_features))
-snt_duration_len = int(np.floor(snt_duration // dt_features))
-ac_DF_trial = acustic_feature_DF.iloc[snt_onset_indx:snt_onset_indx + snt_duration_len]
-
-
-wrd_event = np.zeros(ac_DF_trial.shape[0],)
-wrd_duration = np.zeros(ac_DF_trial.shape[0],)
-delay_btwn_wrd = np.zeros(ac_DF_trial.shape[0],)
-neural_feature=np.zeros((ac_DF_trial.shape[0],df_neural.shape[1]))
-wrd_type =  []
-last_wrd_time=0
-for ii in range(wrd_event.shape[0]):
-    time_int = [snt_onset+ii*dt_features,snt_onset+(ii+1)*dt_features]
-    neural_feature[ii,:] =  df_neural.loc[np.floor(time_int[0]*neural_smaping_rate):np.floor(time_int[1]*neural_smaping_rate)].mean().to_numpy()
-    identified_wrd = words_DF_trial.word.loc[(words_DF_trial.onset<=time_int[1]) & (words_DF_trial.onset>=time_int[0])]
-    identified_wrd_duration = words_DF_trial.duration.loc[(words_DF_trial.onset <= time_int[1]) & (words_DF_trial.onset >= time_int[0])]
-    if (len(identified_wrd) == 0) or (identified_wrd.to_list()[0] == 'sp') :
-        # No word for the time interval
-        wrd_event[ii] = 0
-        wrd_duration[ii] = 0
-        wrd_type.append('NAN')
-
-    elif len(identified_wrd) == 1:
-        # One word for the time interval
-        wrd_event[ii] = 1
-        wrd_duration[ii] = identified_wrd_duration//dt_features
-        delay_btwn_wrd[ii] = ii - last_wrd_time
-        last_wrd_time = ii
-        wrd_type.append( identified_wrd.to_list()[0])
-    else:
-        # select the longest word for the time interval
-        selected=np.where(identified_wrd_duration == identified_wrd_duration.max())[0]
-        wrd_event[ii] = 2
-        wrd_duration[ii] = identified_wrd_duration.to_numpy()[selected]//dt_features
-        wrd_type.append(identified_wrd.to_list()[selected[0]])
-        delay_btwn_wrd[ii] = ii - last_wrd_time
-        last_wrd_time = ii
-ac_DF_trial['wrd_event']=wrd_event
-ac_DF_trial['wrd']=wrd_type
-ac_DF_trial['wrd_duration']=wrd_duration
-ac_DF_trial['diff_from_last_wrd']=delay_btwn_wrd
-
-''' build the CIF for events'''
-
-window = signal.windows.exponential(M, tau=tau)
-ac_DF_trial['synth_CIF']=np.convolve(ac_DF_trial['wrd_event'],window,'same' )
-ac_DF_trial['synth_CIF']=ac_DF_trial['synth_CIF']/ac_DF_trial['synth_CIF'].max()
-# plt.plot(ac_DF_trial['synth_CIF'])
-
-''' decoding model with GLM'''
-ac_DF_trial=ac_DF_trial.reset_index()
-
-# select from either neural or acustic features
-# X=ac_DF_trial[['f_'+str(i) for i in range(mfccs_features_len)]].to_numpy()
-X = neural_feature[:,1:]
-
-X = sm.add_constant(X)
-y=ac_DF_trial['synth_CIF'].to_numpy()
-pos_GLM = sm.GLM(y, X, family=sm.families.Poisson())
+XD_tr = calDesignMatrix_V2(X_tr,hist_len).reshape([X_tr.shape[0],-1])
+XD_te = calDesignMatrix_V2(X_te,hist_len).reshape([X_te.shape[0],-1])
+pos_GLM = sm.GLM(y_tr, XD_tr, family=sm.families.Poisson())
 # pos_GLM_results = pos_GLM.fit()
-pos_GLM_results = pos_GLM.fit_regularized(L1_wt=.0)
+pos_GLM_results = pos_GLM.fit_regularized(L1_wt=.5)
 # print(pos_GLM_results.summary())
-y_hat = pos_GLM_results.predict(X)
+y_hat_tr = pos_GLM_results.predict(XD_tr)
+y_hat_te = pos_GLM_results.predict(XD_te)
+# y_hat_te = np.zeros((X_te.shape[0],))
+# event_hat_te = np.zeros((X_te.shape[0],))
+# numbe_events = ac_DF_trial_tr.wrd.nunique()-1
+# history_events = np.zeros((X_te.shape[0],numbe_events))
+# history_diff=  np.zeros((X_te.shape[0],))
+#
+# t_past=0
+# X_te_masked=X_te
+# X_te_masked[:,-9:]=0
+# qq=0
+# for t in range(hist_len, X_te_masked.shape[0]):
+#         history_diff[t] = (t - t_past)/X_te_masked.shape[0]/2
+#         history_events[:t, qq:] = ((np.arange(t) / X_te_masked.shape[0]/2) ** 2).reshape([-1,1])
+#
+#         X_te_masked[:t,-9] = history_diff[:t]
+#         X_te_masked[:t, -8:] = history_events[:t,:]
+#         XD_te_new = calDesignMatrix_V2(X_te_masked[:t,:],hist_len)
+#         y_hat_te[t] = pos_GLM_results.predict(XD_te_new[-1,:,:].reshape([1,-1]))
+#         if y_hat_te[t]>10:
+#             y_hat_te[t]=10
+#         pred_event=np.random.poisson(lam=y_hat_te[t], size=1)
+#
+#         if pred_event > 0:
+#
+#             if (t>= events_times_tr[:,qq].mean() - 4*events_times_tr[:,qq].std()) and (t<= events_times_tr[:,qq].mean() + 4*events_times_tr[:,qq].std()):
+#                 event_hat_te[t] =1
+#                 qq = qq + 1
+#                 t_past = t
+#             else:
+#                 print('unable to detect')
+#
+
 # y_hat/=np.max(y_hat)
 plt.figure()
-plt.plot(y, 'r',label = 'True_val')
-plt.plot(y_hat, 'b',label = 'Pred_val')
-for ii in ac_DF_trial.wrd.unique():
+doms_tr =np.arange(0,y_tr.shape[0])*dt_features
+plt.plot(doms_tr,y_tr, 'r',label = 'True_val')
+plt.plot(doms_tr,y_hat_tr, 'b',label = 'Pred_val')
+plt.xlabel('time (s)')
+for ii in ac_DF_trial_tr.wrd.unique():
     if ii == 'NAN':
         pass
     else:
-        plt.annotate(ii, (ac_DF_trial[ac_DF_trial.wrd == ii].index.to_numpy()[0] ,.8),rotation=90)
-        # plt.text(ac_DF_trial[ac_DF_trial.wrd == ii].index.to_numpy()[0] ,1, ii)
-plt.title(str(ac_DF_trial.wrd.unique().tolist()))
+        indxes_words =ac_DF_trial_tr[ac_DF_trial_tr.wrd == ii].index.to_numpy()
+        for kk in range(len(indxes_words)):
+            plt.annotate(ii, (indxes_words[kk] *dt_features,.8),rotation=90)
+        # plt.text(ac_DF_trial_tr[ac_DF_trial_tr.wrd == ii].index.to_numpy()[0] ,1, ii)
+plt.title(str(ac_DF_trial_tr.wrd.unique().tolist()))
 plt.legend()
 plt.show()
+plt.figure()
+hist_cols = [col for col in ac_DF_trial_tr.columns if 'history_events' in col]
+plt.plot(ac_DF_trial_tr[hist_cols])
+plt.plot(ac_DF_trial_tr.history_diff)
+
+plt.figure()
+doms_te =np.arange(0,y_te.shape[0])*dt_features
+plt.plot(doms_te,y_te, 'r',label = 'True_val')
+plt.plot(doms_te,y_hat_te, 'b',label = 'Pred_val')
+plt.xlabel('time (s)')
+for ii in ac_DF_trial_te.wrd.unique():
+    if ii == 'NAN':
+        pass
+    else:
+        indxes_words =ac_DF_trial_te[ac_DF_trial_te.wrd == ii].index.to_numpy()
+        for kk in range(len(indxes_words)):
+            plt.annotate(ii, (indxes_words[kk] *dt_features,.8),rotation=90)
+        # plt.text(ac_DF_trial_tr[ac_DF_trial_tr.wrd == ii].index.to_numpy()[0] ,1, ii)
+plt.title(str(ac_DF_trial_te.wrd.unique().tolist()))
+plt.legend()
+plt.show()
+plt.figure()
+plt.plot(ac_DF_trial_te[hist_cols])
+plt.plot(ac_DF_trial_te.history_diff)
+# plt.figure()
+# plt.stem(event_hat_te)
+
+# if Use_neural_fea :
+#     pos_GLM_parm_df = pd.DataFrame(pos_GLM_results.params.reshape([1, -1]).squeeze(), columns=['par_val'])
+#     pos_GLM_parm_df['significance'] = np.abs(pos_GLM_parm_df.par_val) / pos_GLM_parm_df.par_val.max()
+#     pos_GLM_parm_df['parm_name'] = df_neural.columns
+#     pos_GLM_parm_df['parm_name'][0] = 'bias'
+#     pos_GLM_parm_df = pos_GLM_parm_df.sort_values(by='significance', ascending=False)
+#     plt.figure()
+#     plt.stem(pos_GLM_parm_df.parm_name, pos_GLM_parm_df.significance)
+#     plt.xticks(rotation=90)
+# else:
+#
+#     pos_GLM_parm_df = pd.DataFrame(pos_GLM_results.params.reshape([1, -1]).squeeze(), columns=['par_val'])
+#     pos_GLM_parm_df['significance'] = np.abs(pos_GLM_parm_df.par_val) / pos_GLM_parm_df.par_val.max()
+#     pos_GLM_parm_df['parm_name'] = res_list = [*['bias'], *featurelist]
+#     pos_GLM_parm_df = pos_GLM_parm_df.sort_values(by='significance', ascending=False)
+#     plt.figure()
+#     plt.stem(pos_GLM_parm_df.parm_name, pos_GLM_parm_df.significance)
+#     plt.xticks(rotation=90)
 
