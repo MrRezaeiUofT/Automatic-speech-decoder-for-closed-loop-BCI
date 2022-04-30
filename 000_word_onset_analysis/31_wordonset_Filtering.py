@@ -1,6 +1,7 @@
 from speech_utils import *
 from neural_utils import *
 from GMM_utils import *
+from scipy.stats import norm
 import pandas as pd
 from sklearn import preprocessing
 
@@ -32,7 +33,7 @@ audio_file_res = patient_folder+"sub-DM1008_ses-intraop_task-lombard_run-03_reco
 audio_strt_time = 63623.7147033506
 mfccs_features_len = 39
 neural_smaping_rate=1000
-hist_len = 5
+hist_len = 7
 '''audio and text synchronization'''
 phones_DF['onset'] = phones_DF['onset']-audio_strt_time
 sentences_DF['onset'] = sentences_DF['onset']-audio_strt_time
@@ -59,14 +60,14 @@ acustic_feature_DF=pd.DataFrame(mfccs_features.transpose(), columns=['f_'+str(i)
 
 ''' Sentence specified model'''
 Trial_IDs=sentences_DF.trial_id[sentences_DF.sentence == sentences_DF.sentence.unique()[1]].to_list()
-Trial_IDs_tr=Trial_IDs[2:]
-Trial_IDs_te= Trial_IDs[:2]
+Trial_IDs_tr=Trial_IDs[1:]
+Trial_IDs_te= Trial_IDs[:1]
 
 [X_tr,y_tr,X_te,y_te, ac_DF_trial_tr,
  ac_DF_trial_te, featurelist, events_times_tr,
- events_times_te ]= get_tr_te(words_DF, sentences_DF, acustic_feature_DF, df_neural,
-                                                                  dt_features, neural_smaping_rate,Trial_IDs_tr, Trial_IDs_te, mfccs_features_len,
-              Use_neural_fea)
+ events_times_te ]= get_tr_te(words_DF, sentences_DF, acustic_feature_DF,
+                                                                  dt_features,
+                              Trial_IDs_tr, Trial_IDs_te, mfccs_features_len, Use_neural_fea)
 
 XD_tr = calDesignMatrix_V2(X_tr,hist_len).reshape([X_tr.shape[0],-1])
 XD_te = calDesignMatrix_V2(X_te,hist_len).reshape([X_te.shape[0],-1])
@@ -82,34 +83,56 @@ numbe_events = ac_DF_trial_tr.wrd.nunique()-1
 history_events = np.zeros((X_te.shape[0],numbe_events))
 history_diff=  np.zeros((X_te.shape[0],))
 
-t_past=0
 X_te_masked=X_te
-X_te_masked[:,-1]=0
+# X_te_masked[:,-1]=0
+
+prior_filter_events_times=np.zeros((numbe_events,X_te_masked.shape[0]))
+prior_filter_events_delay=np.zeros((numbe_events,X_te_masked.shape[0]))
+
+delays = np.zeros(events_times_tr.shape)
+delays[:,0]=events_times_tr[:,0]
+delays[:,1:]=events_times_tr[:,1:]-events_times_tr[:,:-1]
+# delays[:,-1]=X_te_masked.shape[0]-events_times_tr[:,-1]
+for ii in range(numbe_events):
+    if events_times_tr[:, ii].std() == 0:
+        std_n = 3
+        std_d = 3
+    else:
+        std_n = 3*events_times_tr[:, ii].std()
+        std_d = 3 * delays[:, ii].std()
+    prior_filter_events_times[ii,:] = norm.pdf(np.arange(X_te_masked.shape[0]).squeeze(), events_times_tr[:, ii].mean(), std_n)
+    prior_filter_events_times[ii,:] = prior_filter_events_times[ii,:]/prior_filter_events_times[ii,:].max()
+    prior_filter_events_delay[ii, :] = norm.pdf(np.arange(X_te_masked.shape[0]).squeeze(),
+                                                delays[:, ii].mean(), std_d)
+    prior_filter_events_delay[ii, :] = prior_filter_events_delay[ii, :] / prior_filter_events_delay[ii, :].max()
+
+
+t_past=0
 qq=0
 for t in range(hist_len, X_te_masked.shape[0]):
-        history_diff[t] = (t - t_past)/X_te_masked.shape[0]/2
-
-
-        X_te_masked[:t,-1] = history_diff[:t]
+    if (qq <= numbe_events - 1):
+        history_diff[t] = (t - t_past)/X_te_masked.shape[0]
+        # X_te_masked[:t,-1] = history_diff[:t]
 
         XD_te_new = calDesignMatrix_V2(X_te_masked[:t,:],hist_len)
-        y_hat_te[t] = pos_GLM_results.predict(XD_te_new[-1,:,:].reshape([1,-1]))
-        pred_event=np.random.poisson(lam=y_hat_te[t], size=1)
+        np.random.choice(delays[:, qq])
 
-        if pred_event > 0:
-            # if qq == 0:
-            #     event_hat_te[t] = 1
-            #     qq = qq + 1
-            #     t_past = t
-            if (t>= events_times_tr[:,qq].mean() - 4*events_times_tr[:,qq].std()) and (t<= events_times_tr[:,qq].mean() + 4*events_times_tr[:,qq].std()):
-                event_hat_te[t] =1
+        if ((t-t_past)>= delays[:, qq].mean()):
+            y_hat_te[t] = pos_GLM_results.predict(XD_te_new[-1, :, :].reshape([1, -1]))
+            y_hat_te[t] = y_hat_te[t]*prior_filter_events_times[qq, t]#* prior_filter_events_delay[qq, t-t_past]
+
+
+        #
+            if  ( y_hat_te[t]>.02) :
+                print(qq)
+                event_hat_te[t]=1
                 qq = qq + 1
                 t_past = t
-            else:
-                print('unable to detect')
-
-
-# y_hat/=np.max(y_hat)
+        #     print( y_hat_te[t])
+        # if qq == numbe_events-1:
+        #     break
+# y_hat_te=y_hat_te * prior_filter_events_times[3,:]#.mean(axis=0)
+y_hat_te/=np.nanmax(y_hat_te)
 plt.figure()
 doms_tr =np.arange(0,y_tr.shape[0])*dt_features
 plt.plot(doms_tr,y_tr, 'r',label = 'True_val')
@@ -131,10 +154,13 @@ hist_cols = [col for col in ac_DF_trial_tr.columns if 'history_events' in col]
 plt.plot(ac_DF_trial_tr[hist_cols])
 plt.plot(ac_DF_trial_tr.history_diff)
 
+
 plt.figure()
 doms_te =np.arange(0,y_te.shape[0])*dt_features
 plt.plot(doms_te,y_te, 'r',label = 'True_val')
 plt.plot(doms_te,y_hat_te, 'b',label = 'Pred_val')
+# plt.plot(doms_te,prior_filter_events_times.transpose())
+plt.stem(doms_te,event_hat_te)
 plt.xlabel('time (s)')
 for ii in ac_DF_trial_te.wrd.unique():
     if ii == 'NAN':
@@ -147,28 +173,16 @@ for ii in ac_DF_trial_te.wrd.unique():
 plt.title(str(ac_DF_trial_te.wrd.unique().tolist()))
 plt.legend()
 plt.show()
-plt.figure()
-plt.plot(ac_DF_trial_te[hist_cols])
-plt.plot(ac_DF_trial_te.history_diff)
-plt.figure()
-plt.stem(event_hat_te)
-
-# if Use_neural_fea :
-#     pos_GLM_parm_df = pd.DataFrame(pos_GLM_results.params.reshape([1, -1]).squeeze(), columns=['par_val'])
-#     pos_GLM_parm_df['significance'] = np.abs(pos_GLM_parm_df.par_val) / pos_GLM_parm_df.par_val.max()
-#     pos_GLM_parm_df['parm_name'] = df_neural.columns
-#     pos_GLM_parm_df['parm_name'][0] = 'bias'
-#     pos_GLM_parm_df = pos_GLM_parm_df.sort_values(by='significance', ascending=False)
-#     plt.figure()
-#     plt.stem(pos_GLM_parm_df.parm_name, pos_GLM_parm_df.significance)
-#     plt.xticks(rotation=90)
-# else:
+# plt.figure()
+# plt.plot(ac_DF_trial_te[hist_cols])
+# plt.plot(ac_DF_trial_te.history_diff)
 #
-#     pos_GLM_parm_df = pd.DataFrame(pos_GLM_results.params.reshape([1, -1]).squeeze(), columns=['par_val'])
-#     pos_GLM_parm_df['significance'] = np.abs(pos_GLM_parm_df.par_val) / pos_GLM_parm_df.par_val.max()
-#     pos_GLM_parm_df['parm_name'] = res_list = [*['bias'], *featurelist]
-#     pos_GLM_parm_df = pos_GLM_parm_df.sort_values(by='significance', ascending=False)
-#     plt.figure()
-#     plt.stem(pos_GLM_parm_df.parm_name, pos_GLM_parm_df.significance)
-#     plt.xticks(rotation=90)
-
+# plt.figure()
+# plt.plot(prior_filter_events_times.transpose())
+# plt.stem(event_hat_te)
+# plt.title('prior_filter_events_times')
+#
+# plt.figure()
+# plt.plot(prior_filter_events_delay.transpose())
+# plt.stem(event_hat_te)
+# plt.title('prior_filter_events_delay')
