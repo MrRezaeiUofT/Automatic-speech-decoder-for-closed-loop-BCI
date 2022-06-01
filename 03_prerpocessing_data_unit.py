@@ -9,7 +9,16 @@ phones_DF=pd.read_csv(patient_folder+'sub-DM1008_ses-intraop_task-lombard_annot-
 sentences_DF=pd.read_csv(patient_folder+'sub-DM1008_ses-intraop_task-lombard_annot-produced-sentences.tsv',sep='\t')
 words_DF=pd.read_csv(patient_folder+'sub-DM1008_ses-intraop_task-lombard_annot-produced-words.tsv',sep='\t')
 audio_file = patient_folder+"sub-DM1008_ses-intraop_task-lombard_run-03_recording-directionalmicaec_physio.wav"
+
+# patient_folder='./Datasets/DM1012/'
+# phones_DF=pd.read_csv(patient_folder+'sub-DM1012_ses-intraop_task-lombard_annot-produced-phonemes.tsv',sep='\t')
+# sentences_DF=pd.read_csv(patient_folder+'sub-DM1012_ses-intraop_task-lombard_annot-produced-sentences.tsv',sep='\t')
+# words_DF=pd.read_csv(patient_folder+'sub-DM1012_ses-intraop_task-lombard_annot-produced-words.tsv',sep='\t')
+# audio_file = patient_folder+"sub-DM1012_ses-intraop_task-lombard_run-02_recording-directionalmicaec_physio.wav"
+# patient DM1008
 audio_strt_time = 63623.7147033506
+# patient DM1012
+# audio_strt_time = 72949.95086
 # phones_DF.phoneme.hist()
 
 '''audio and text synchronization'''
@@ -20,7 +29,7 @@ words_DF['onset'] = words_DF['onset']-audio_strt_time
 ''' Extracting MFCCs'''
 mfccs_features, sr,signal = mfcc_feature_extraction(audio_file, 13)
 mfccs_features = preprocessing.scale(mfccs_features, axis=1)
-plt.figure(figsize=(25, 10))
+plt.figure()
 out=librosa.display.specshow(mfccs_features,
                          x_axis="time",
                          sr=sr)
