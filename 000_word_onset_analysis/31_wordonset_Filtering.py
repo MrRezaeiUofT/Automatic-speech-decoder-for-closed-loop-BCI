@@ -4,8 +4,6 @@ from GMM_utils import *
 from scipy.stats import norm
 import pandas as pd
 from sklearn import preprocessing
-from scipy import stats
-from sklearn.model_selection import KFold
 from sklearn.model_selection import LeaveOneOut
 import statsmodels.api as sm
 def calDesignMatrix_V2(X,h):

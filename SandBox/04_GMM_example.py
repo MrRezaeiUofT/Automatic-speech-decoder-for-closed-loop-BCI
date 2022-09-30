@@ -1,6 +1,4 @@
-import pandas as pd
-from sklearn import preprocessing
-from sklearn.mixture import GaussianMixture, BayesianGaussianMixture
+from sklearn.mixture import GaussianMixture
 import matplotlib.pyplot as plt
 from sklearn.datasets._samples_generator import make_blobs
 # Plot the data with K Means Labels

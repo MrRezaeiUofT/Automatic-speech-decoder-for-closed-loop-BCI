@@ -2,7 +2,6 @@ from speech_utils import *
 from GMM_utils import *
 import pandas as pd
 from sklearn import preprocessing
-from scipy import signal
 
 patient_folder='../Datasets/DM1008/'
 phones_DF=pd.read_csv(patient_folder+'sub-DM1008_ses-intraop_task-lombard_annot-produced-phonemes.tsv',sep='\t')
