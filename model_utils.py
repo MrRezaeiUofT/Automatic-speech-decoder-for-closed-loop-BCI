@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import string
 import random
+import pandas as pd
 import time
 import seaborn as sn
 from typing import List
@@ -166,3 +167,23 @@ def get_state_transition_p_bigram(phones_code_dic, Biogram):
         for key_temp, value_temp in fu_dic.items():
             pwtwt1[value,phones_code_dic[key_temp]]=value_temp
     return pwtwt1
+
+def get_language_components(total_data, N_gram):
+    ''' re-assign the phoneme ids'''
+    phones_code_dic = dict(zip(total_data.phoneme.unique(), np.arange(total_data.phoneme.nunique())))
+
+    ''' phonemes N-gram model'''
+    phones_NgramModel = NgramModel(N_gram)
+    phones_NgramModel.update(sentence=(total_data['phoneme'].to_list()), need_tokenize=False)
+    # print(phones_NgramModel.prob(('HH',),'IY1'))
+    # print(phones_NgramModel.map_to_probs(('HH',)))
+    num_state = total_data['phoneme'].nunique()
+    pwtwt1 = get_state_transition_p_bigram(phones_code_dic, phones_NgramModel)
+    plt.figure()
+    plt.imshow(np.log(pwtwt1))
+
+    ''' Phoneme duration model'''
+    phoneme_duration_df = pd.DataFrame()
+    phoneme_duration_df['mean'] = total_data.groupby(by=["phoneme_id"], dropna=False).mean().phoneme_duration
+    phoneme_duration_df['std'] = total_data.groupby(by=["phoneme_id"], dropna=False).std().phoneme_duration
+    return pwtwt1, phoneme_duration_df, phones_NgramModel, phones_code_dic

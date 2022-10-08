@@ -1,10 +1,26 @@
 from data_utilities import *
-
+import json
 
 patient_id = 'DM1008'
 datasets_add = './Datasets/'
-feature_id = [0, 128]
-dt = 10
 
-total_data, neural_df, phonemes_df, new_phonemes_df, trials_df, dt, zero_time, phones_code_dic = get_data(patient_id, datasets_add, feature_id, dt)
+
+dataset_info = {
+
+'feature_id': [0, 128],
+    'dt': 2,
+    'sampling_freq':1000
+
+}
+
+
+total_data, neural_df, phonemes_df, new_phonemes_df, trials_df, dt, zero_time, phones_code_dic = get_data(patient_id,
+                                                                                                          datasets_add,
+                                                                                                          dataset_info['feature_id'],
+                                                                                                          dataset_info['dt'],
+                                                                                                          dataset_info['sampling_freq'])
+dataset_info['zero_time'] = zero_time
+
 total_data.to_csv(datasets_add + patient_id + '/' + 'Preprocessed_data/' + 'prepro_phoneme_neural_total_v1.csv')
+with open(datasets_add + patient_id + '/' + 'Preprocessed_data/' + "dataset_info.json", "w") as outfile:
+    json.dump(dataset_info, outfile)
