@@ -3,13 +3,13 @@ import seaborn as sns
 import json
 patient_id = 'DM1008'
 datasets_add = './Datasets/'
-
+data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 # Opening JSON file
-with open(datasets_add + patient_id + '/' + 'Preprocessed_data/' + "dataset_info.json", 'r') as openfile:
+with open(data_add + "dataset_info.json", 'r') as openfile:
     # Reading from json file
     dataset_info = json.load(openfile)
 
-total_data = pd.read_csv(datasets_add + patient_id + '/' + 'Preprocessed_data/' + 'prepro_phoneme_neural_total_v1.csv')
+total_data = pd.read_csv(data_add + 'prepro_phoneme_neural_total_v1.csv')
 
 ''' corr. phonemes and neural features '''
 corr = total_data.corr(method='pearson')

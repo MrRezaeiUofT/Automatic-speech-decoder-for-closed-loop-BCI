@@ -4,13 +4,11 @@ import json
 patient_id = 'DM1008'
 datasets_add = './Datasets/'
 
-
+data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 dataset_info = {
-
 'feature_id': [0, 128],
     'dt': 2,
     'sampling_freq':1000
-
 }
 
 
@@ -21,6 +19,6 @@ total_data, neural_df, phonemes_df, new_phonemes_df, trials_df, dt, zero_time, p
                                                                                                           dataset_info['sampling_freq'])
 dataset_info['zero_time'] = zero_time
 
-total_data.to_csv(datasets_add + patient_id + '/' + 'Preprocessed_data/' + 'prepro_phoneme_neural_total_v1.csv')
-with open(datasets_add + patient_id + '/' + 'Preprocessed_data/' + "dataset_info.json", "w") as outfile:
+total_data.to_csv(data_add + 'prepro_phoneme_neural_total_v1.csv')
+with open(data_add + "dataset_info.json", "w") as outfile:
     json.dump(dataset_info, outfile)

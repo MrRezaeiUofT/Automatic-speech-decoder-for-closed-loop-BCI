@@ -1,11 +1,11 @@
 from data_utilities import *
-from neural_utils import get_psd_features
-import json
+from neural_utils import *
+
 patient_id = 'DM1008'
 datasets_add = './Datasets/'
-
+data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 # Opening JSON file
-with open(datasets_add + patient_id + '/' + 'Preprocessed_data/' + "dataset_info.json", 'r') as openfile:
+with open(data_add + "dataset_info.json", 'r') as openfile:
     # Reading from json file
     dataset_info = json.load(openfile)
 total_data = pd.read_csv(datasets_add + patient_id + '/' + 'Preprocessed_data/' + 'prepro_phoneme_neural_total_v1.csv')
@@ -25,5 +25,11 @@ psd_config={
     'smoothing_window_size': 50,
      }
 
-data_list, freqs = get_psd_features(total_data, psd_config, patient_id)
+saving_add = data_add +'trials/'
+freqs = get_psd_features(total_data, psd_config, patient_id, saving_add)
+
+psd_config['freqs'] = freqs
+with open(saving_add + "neural_features_info.json", "w") as outfile:
+    json.dump(dataset_info, outfile)
+
 

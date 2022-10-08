@@ -6,11 +6,12 @@ from mne import create_info, EpochsArray
 from scipy import signal
 from mne.time_frequency import (tfr_array_morlet)
 from mne.baseline import rescale
+import pickle
+import json
+
+def get_psd_features(total_data_df, psd_config, patient_id, saving_add):
 
 
-def get_psd_features(total_data_df, psd_config, patient_id):
-
-    output_data =[]
     if patient_id == 'DM1008':
        pass
     else:
@@ -35,8 +36,13 @@ def get_psd_features(total_data_df, psd_config, patient_id):
         neural_psd_band, freqs = feature_mapping(neural_psd, psd_config)
         trial_df = trial_df.drop(indx_baselines)
         neural_psd_band = np.delete(neural_psd_band,indx_baselines, axis=-1)
-        output_data.append([neural_psd_band, trial_df ])
-    return output_data, freqs
+
+        file_name = saving_add + 'trial_' + str(trial) + '.pkl'
+        with  open(file_name, "wb") as open_file:
+            pickle.dump([neural_psd_band, trial_df], open_file)
+
+
+    return  freqs
 
 
 def psd_extractor(neural_data, psd_config, index_baselines, type='power'):
