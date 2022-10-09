@@ -25,8 +25,7 @@ for trial in range(1,2):
         data_list_trial = pickle.load(open_file)
     X = np.swapaxes(data_list_trial[0], 2, 0)
     X = X.reshape([X.shape[0], -1])
-
-    y = data_list_trial[1].phoneme_id.to_numpy()
+    y = data_list_trial[1][data_list_trial[1].columns[data_list_trial[1].columns.str.contains("id_onehot")]].to_numpy()
     XDesign = calDesignMatrix_V2(X,hk+1).reshape([X.shape[0], -1])
     model_LR.fit(XDesign, y)
     y_hat=model_LR.predict(XDesign)

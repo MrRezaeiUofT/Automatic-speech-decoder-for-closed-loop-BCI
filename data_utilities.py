@@ -140,6 +140,8 @@ def get_data(patient_id, datasets_add, feature_id, dt, sampling_freq):
     total_data['phoneme_duration'] = new_phones_df.duration
     total_data['phoneme'] = new_phones_df.phoneme
     total_data['phoneme_id'] = new_phones_df.phoneme_id
+    total_data[['id_onehot_' + str(iid) for iid in range(total_data['phoneme_id'].nunique())]] = pd.get_dummies(
+        total_data['phoneme_id']).to_numpy()
     total_data['phoneme_onset'] = new_phones_df.phoneme_onset
     total_data['trial_id'] = new_phones_df.trial_id
     return total_data, neural_df, phones_df, new_phones_df, trials_df, dt, zero_time, phones_code_dic
