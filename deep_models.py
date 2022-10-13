@@ -23,8 +23,12 @@ def get_trial_data(data_add,trial, h_k):
     X_tr = X_tr.reshape([X_tr.shape[0], -1])
     X_tr = scaler.fit_transform(X_tr)
     y_tr = data_list_trial[1][data_list_trial[1].columns[data_list_trial[1].columns.str.contains("id_onehot")]].to_numpy()
-
     XDesign = calDesignMatrix_V2(X_tr, h_k + 1).reshape([X_tr.shape[0], -1])
+
+    ''' delete 'sp' from dataset'''
+    sp_index = np.where(np.argmax(y_tr, axis=1) == 7)[0]
+    XDesign = np.delete(XDesign, sp_index, 0)
+    y_tr = np.delete(y_tr, sp_index, 0)
     return torch.tensor(XDesign, dtype=torch.float32),  torch.tensor(y_tr, dtype=torch.float32)
 
 class SimpleClassifier(nn.Module):
@@ -48,6 +52,8 @@ class SimpleClassifier(nn.Module):
         x =  F.relu(self.fcin(x))
         # If the size is a square, you can specify with a single number
         x =  F.relu(self.fch(x))
+        x = F.relu(self.fch(x))
+        x = F.relu(self.fch(x))
         x = self.fout(x)
         # x = F.softmax(x, dim=1)
         return x

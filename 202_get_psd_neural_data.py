@@ -11,18 +11,18 @@ with open(data_add + "dataset_info.json", 'r') as openfile:
 total_data = pd.read_csv(datasets_add + patient_id + '/' + 'Preprocessed_data/' + 'prepro_phoneme_neural_total_v1.csv')
 # time frequency neural features
 list_ECOG_chn = total_data.columns[total_data.columns.str.contains("feature")].to_list()
-frequency_bands = [[2, 8], [8, 12], [12, 24]]
+frequency_bands = [[30, 50], [60, 90], [90, 150]]
 
 psd_config={
     'chnls': list_ECOG_chn,
     'FreqBands': frequency_bands,
     'sampling_freq': 1000//dataset_info['dt'],
-    'freq_stp': 1,
-    'L_cut_freq': 60,
+    'freq_stp': 10,
+    'L_cut_freq': 30,
     'H_cut_freq': 150,
-    'avg_freq_bands': False,
-    'smoothing': False,
-    'smoothing_window_size': 50,
+    'avg_freq_bands': True,
+    'smoothing': True,
+    'smoothing_window_size': 10,
      }
 
 saving_add = data_add +'trials/'
