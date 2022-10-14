@@ -6,7 +6,7 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 import pickle
 
-def get_trial_data(data_add,trial, h_k):
+def get_trial_data(data_add,trial, h_k, phones_code_dic):
     '''
     get a batch of data and [re[are it for the model
     :param data_add: data address
@@ -25,10 +25,13 @@ def get_trial_data(data_add,trial, h_k):
     y_tr = data_list_trial[1][data_list_trial[1].columns[data_list_trial[1].columns.str.contains("id_onehot")]].to_numpy()
     XDesign = calDesignMatrix_V2(X_tr, h_k + 1).reshape([X_tr.shape[0], -1])
 
-    ''' delete 'sp' from dataset'''
-    sp_index = np.where(np.argmax(y_tr, axis=1) == 7)[0]
-    XDesign = np.delete(XDesign, sp_index, 0)
-    y_tr = np.delete(y_tr, sp_index, 0)
+    ''' delete 'sp' and 'NaN' from dataset'''
+    sp_index = np.where(np.argmax(y_tr, axis=1) == phones_code_dic['sp'])[0]
+    nan_index = np.where(np.argmax(y_tr, axis=1) == phones_code_dic['NAN'])[0]
+    delet_phonemes_indx=np.concatenate([nan_index,sp_index],axis=0)
+
+    XDesign = np.delete(XDesign, delet_phonemes_indx, 0)
+    y_tr = np.delete(y_tr, delet_phonemes_indx, 0)
     return torch.tensor(XDesign, dtype=torch.float32),  torch.tensor(y_tr, dtype=torch.float32)
 
 class SimpleClassifier(nn.Module):

@@ -9,19 +9,22 @@ with open(data_add + "dataset_info.json", 'r') as openfile:
     # Reading from json file
     dataset_info = json.load(openfile)
 total_data = pd.read_csv(datasets_add + patient_id + '/' + 'Preprocessed_data/' + 'prepro_phoneme_neural_total_v1.csv')
+
+# '''  remove rows with 'sp' phonemes '''
+# total_data =total_data.drop(total_data[total_data.phoneme == 'sp'].index)
 # time frequency neural features
 list_ECOG_chn = total_data.columns[total_data.columns.str.contains("feature")].to_list()
-frequency_bands = [[30, 50], [60, 90], [90, 150]]
+frequency_bands = [[34, 55], [65,95], [130,170]]
 
 psd_config={
     'chnls': list_ECOG_chn,
     'FreqBands': frequency_bands,
     'sampling_freq': 1000//dataset_info['dt'],
-    'freq_stp': 10,
+    'freq_stp': 1,
     'L_cut_freq': 30,
-    'H_cut_freq': 150,
+    'H_cut_freq': 170,
     'avg_freq_bands': True,
-    'smoothing': True,
+    'smoothing': False,
     'smoothing_window_size': 10,
      }
 
