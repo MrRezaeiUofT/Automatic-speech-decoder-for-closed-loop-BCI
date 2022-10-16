@@ -14,7 +14,7 @@ total_data = pd.read_csv(datasets_add + patient_id + '/' + 'Preprocessed_data/' 
 # total_data =total_data.drop(total_data[total_data.phoneme == 'sp'].index)
 # time frequency neural features
 list_ECOG_chn = total_data.columns[total_data.columns.str.contains("feature")].to_list()
-frequency_bands = [[34, 55], [65,95], [130,170]]
+frequency_bands = [[30, 55], [65,95], [130,170]]
 
 psd_config={
     'chnls': list_ECOG_chn,
@@ -24,7 +24,7 @@ psd_config={
     'L_cut_freq': 30,
     'H_cut_freq': 170,
     'avg_freq_bands': True,
-    'smoothing': False,
+    'smoothing': True,
     'smoothing_window_size': 10,
      }
 

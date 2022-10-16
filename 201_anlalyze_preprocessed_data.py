@@ -1,5 +1,6 @@
 from data_utilities import *
 import seaborn as sns
+import matplotlib.pyplot as plt
 import json
 patient_id = 'DM1008'
 datasets_add = './Datasets/'
@@ -19,6 +20,7 @@ g = sns.barplot(x=total_data.columns[total_data.columns.str.contains("feature")]
 g.set_xticklabels(g.get_xticklabels(), rotation=90)
 g.set_title('neural signals corr. with phoneme ids')
 ''' phonemes '''
+plt.figure()
 g = total_data.phoneme_duration.hist( log=True)
 
 

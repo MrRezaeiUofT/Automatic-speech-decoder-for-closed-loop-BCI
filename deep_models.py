@@ -1,12 +1,13 @@
 import torch
 import torch.nn as nn
-from neural_utils import  calDesignMatrix_V2
+from neural_utils import  calDesignMatrix_V2, calDesignMatrix_V3
 import torch.nn.functional as F
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 import pickle
+from torch.autograd import Variable
 
-def get_trial_data(data_add,trial, h_k, phones_code_dic):
+def get_trial_data(data_add,trial, h_k, phones_code_dic, tensor_enable):
     '''
     get a batch of data and [re[are it for the model
     :param data_add: data address
@@ -18,21 +19,32 @@ def get_trial_data(data_add,trial, h_k, phones_code_dic):
     file_name = data_add + 'trials/trial_' + str(trial) + '.pkl'
     with open(file_name, "rb") as open_file:
         data_list_trial = pickle.load(open_file)
-
+    data_list_trial[1] =data_list_trial[1].reset_index()
     X_tr = np.swapaxes(data_list_trial[0], 2, 0)
-    X_tr = X_tr.reshape([X_tr.shape[0], -1])
-    X_tr = scaler.fit_transform(X_tr)
-    y_tr = data_list_trial[1][data_list_trial[1].columns[data_list_trial[1].columns.str.contains("id_onehot")]].to_numpy()
-    XDesign = calDesignMatrix_V2(X_tr, h_k + 1).reshape([X_tr.shape[0], -1])
+    if tensor_enable:
+        X_tr = X_tr.reshape([X_tr.shape[0], -1])
+        X_tr-=X_tr.mean(axis=0)
+        X_tr /= (1+X_tr.std(axis=0))
+        XDesign = calDesignMatrix_V2(X_tr, h_k + 1)  # .reshape([X_tr.shape[0], -1])
+    else:
+        XDesign = calDesignMatrix_V3(X_tr, h_k + 1)  # .reshape([X_tr.shape[0], -1])
 
-    ''' delete 'sp' and 'NaN' from dataset'''
+
+    y_tr = data_list_trial[1][data_list_trial[1].columns[data_list_trial[1].columns.str.contains("id_onehot")]].to_numpy()
+
+
+    ''' delete 'sp' and 'NaN'  and non-onset_phonemes from dataset'''
     sp_index = np.where(np.argmax(y_tr, axis=1) == phones_code_dic['sp'])[0]
     nan_index = np.where(np.argmax(y_tr, axis=1) == phones_code_dic['NAN'])[0]
-    delet_phonemes_indx=np.concatenate([nan_index,sp_index],axis=0)
+    non_phoneme_onset = data_list_trial[1][data_list_trial[1].phoneme_onset == 0].index.to_numpy()
+    delet_phonemes_indx = np.unique(np.concatenate([nan_index,sp_index, non_phoneme_onset],axis=0))
 
     XDesign = np.delete(XDesign, delet_phonemes_indx, 0)
     y_tr = np.delete(y_tr, delet_phonemes_indx, 0)
-    return torch.tensor(XDesign, dtype=torch.float32),  torch.tensor(y_tr, dtype=torch.float32)
+    if tensor_enable:
+        return torch.tensor(XDesign, dtype=torch.float32), torch.tensor(y_tr, dtype=torch.float32)
+    else:
+        return XDesign, y_tr
 
 class SimpleClassifier(nn.Module):
     """
@@ -58,7 +70,7 @@ class SimpleClassifier(nn.Module):
         x = F.relu(self.fch(x))
         x = F.relu(self.fch(x))
         x = self.fout(x)
-        # x = F.softmax(x, dim=1)
+        x=torch.nn.functional.softmax(x, dim=1)
         return x
 
 
@@ -67,3 +79,41 @@ class SimpleClassifier(nn.Module):
         return torch.sum(pred == labels).item()
 
 
+class RNN_Classifier(nn.Module):
+    """
+    simple classifier
+    """
+    def __init__(self, Input_size, history_length, output_size, hidden_dim, n_layers):
+        super(RNN_Classifier,  self).__init__()
+        # 1 input image channel, 6 output channels, 5x5 square convolution
+        # kernel
+        self.Input_size = Input_size
+        self.history_length = history_length
+        self.output_size = output_size
+        self.hidden_dim = hidden_dim
+        self.n_layers = n_layers
+
+        self.rnn = nn.RNN(
+            self.Input_size, self.hidden_dim, self.n_layers, batch_first=True, dropout=.1
+        )
+        self.flatten = nn.Flatten()
+        self.softplus = nn.Softplus()
+        self.fin = nn.Linear(Input_size+self.hidden_dim, self.hidden_dim)
+        self.fch = nn.Linear(self.hidden_dim, self.hidden_dim)
+        self.fout = nn.Linear(self.hidden_dim, self.output_size)
+
+    def forward(self, x):
+        h0 = Variable(torch.randn(self.n_layers, x.shape[0], self.hidden_dim))
+
+        out_h, hnh = self.rnn(x[:, :-1, :], h0)
+        x_embed = torch.cat((out_h[:,-1,:], torch.squeeze(x[:,-1,:])), -1)
+        x_embed = F.relu(self.fin(x_embed))
+        x = F.relu(self.fch(x_embed))
+        x = self.fout(x)
+        x = torch.nn.functional.softmax(x, dim=1)
+        return x
+
+
+    def accuracy(self, out, labels):
+        _, pred = torch.max(out, dim=1)
+        return torch.sum(pred == labels).item()

@@ -119,7 +119,8 @@ def get_data(patient_id, datasets_add, feature_id, dt, sampling_freq):
             temp_df = phones_df.iloc[ii].values.repeat(numb_rep).reshape(
                     [-1, numb_rep]).transpose()
             temp_df[:, phones_df.columns.get_loc('duration')] = 0
-
+            temp_df[:, phones_df.columns.get_loc('phoneme')] = 'NAN'
+            temp_df[:, phones_df.columns.get_loc('phoneme_id')] = phones_code_dic['NAN']
             new_phones_df = new_phones_df.append(pd.DataFrame(temp_df
                 , columns=phones_df.columns))
         else:
@@ -153,3 +154,4 @@ def listToString(s):
 
     # return string
     return (str1.join(s))
+

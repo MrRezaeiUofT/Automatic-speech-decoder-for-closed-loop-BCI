@@ -80,7 +80,7 @@ def feature_mapping(neural_features, psd_config):
 
 def calDesignMatrix_V2(X,h):
     '''
-
+ design matrix with concat all features
     :param X: [samples*Feature]
     :param h: hist
     :return: [samples*hist*Feature]
@@ -93,4 +93,22 @@ def calDesignMatrix_V2(X,h):
     for i in range(0,XDsgn.shape[0]):
          #print(i)
          XDsgn[i, : , :]= (PadX[i:h+i,:])
+    return XDsgn
+
+def calDesignMatrix_V3(X,h):
+    '''
+ design matrix with keep features orders
+    :param X: [samples*Feature]
+    :param h: hist
+    :return: [samples*hist*Feature]
+
+    '''
+
+    PadX = np.zeros([h , X.shape[1], X.shape[2]])
+    PadX =np.concatenate([PadX,X],axis=0)
+    XDsgn=np.zeros([X.shape[0], h, X.shape[1], X.shape[2]])
+    # print(PadX.shapepe)
+    for i in range(0,XDsgn.shape[0]):
+         #print(i)
+         XDsgn[i, : , :, :]= (PadX[i:h+i, :, :])
     return XDsgn
