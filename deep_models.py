@@ -1,13 +1,13 @@
 import torch
 import torch.nn as nn
-from neural_utils import  calDesignMatrix_V2, calDesignMatrix_V3
+from neural_utils import  calDesignMatrix_V2, calDesignMatrix_V3, calDesignMatrix_V4
 import torch.nn.functional as F
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 import pickle
 from torch.autograd import Variable
 
-def get_trial_data(data_add,trial, h_k, phones_code_dic, tensor_enable):
+def get_trial_data(data_add,trial, h_k,f_k, phones_code_dic, tensor_enable):
     '''
     get a batch of data and [re[are it for the model
     :param data_add: data address
@@ -15,7 +15,6 @@ def get_trial_data(data_add,trial, h_k, phones_code_dic, tensor_enable):
     :param h_k: length of history
     :return:
     '''
-    scaler = StandardScaler()
     file_name = data_add + 'trials/trial_' + str(trial) + '.pkl'
     with open(file_name, "rb") as open_file:
         data_list_trial = pickle.load(open_file)
@@ -24,10 +23,12 @@ def get_trial_data(data_add,trial, h_k, phones_code_dic, tensor_enable):
     if tensor_enable:
         X_tr = X_tr.reshape([X_tr.shape[0], -1])
         X_tr-=X_tr.mean(axis=0)
-        X_tr /= (1+X_tr.std(axis=0))
+        X_tr /= (X_tr.std(axis=0))
         XDesign = calDesignMatrix_V2(X_tr, h_k + 1)  # .reshape([X_tr.shape[0], -1])
     else:
-        XDesign = calDesignMatrix_V3(X_tr, h_k + 1)  # .reshape([X_tr.shape[0], -1])
+        X_tr -= X_tr.mean(axis=0)
+        X_tr /= ( X_tr.std(axis=0))
+        XDesign = calDesignMatrix_V4(X_tr, h_k + 1, f_k)  # .reshape([X_tr.shape[0], -1])
 
 
     y_tr = data_list_trial[1][data_list_trial[1].columns[data_list_trial[1].columns.str.contains("id_onehot")]].to_numpy()
@@ -117,3 +118,46 @@ class RNN_Classifier(nn.Module):
     def accuracy(self, out, labels):
         _, pred = torch.max(out, dim=1)
         return torch.sum(pred == labels).item()
+
+
+
+class CNN_Classifier(nn.Module):
+    """
+    simple classifier
+    """
+    def __init__(self):
+        super(CNN_Classifier,  self).__init__()
+        # 1 input image channel, 6 output channels, 5x5 square convolution
+        # kernel
+        # self.Input_size = Input_size
+        # self.history_length = history_length
+        # self.output_size = output_size
+        # self.hidden_dim = hidden_dim
+        # self.n_layers = n_layers
+
+        # self.conv1 = nn.Conv2d(3, 6, 5)
+        # self.pool = nn.MaxPool2d(3, 3)
+        # self.conv2 = nn.Conv2d(6, 16, 5)
+
+        self.features = nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=4, kernel_size=10, stride=1, padding=1),
+            nn.MaxPool2d(1, 5), nn.ReLU(inplace=True), nn.BatchNorm2d(4),
+            nn.Conv2d(in_channels=4, out_channels=20, kernel_size=10, stride=1, padding=1),
+            nn.MaxPool2d(1, 5), nn.ReLU(inplace=True), nn.BatchNorm2d(20),
+        )
+        self.fc1 = nn.Linear(320, 42)
+
+
+
+
+    def forward(self, x):
+        x = self.features(x)
+        x = torch.flatten(x, 1)  # flatten all dimensions except batch
+        # print(x.shape)
+        x = F.relu(self.fc1(x))
+        # print(x.shape)
+        # x = F.relu(self.fc2(x))
+        # x = torch.nn.functional.softmax(x, dim=1)
+        return x
+
+

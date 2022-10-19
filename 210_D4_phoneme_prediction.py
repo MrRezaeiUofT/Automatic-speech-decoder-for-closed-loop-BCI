@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import torch.optim as optim
 import torch.nn as nn
 import torch
-from deep_models import SimpleClassifier, get_trial_data, RNN_Classifier
+from deep_models import SimpleClassifier, get_trial_data, RNN_Classifier, CNN_Classifier
 import pickle
 
 
@@ -34,7 +34,8 @@ file_name = data_add + 'trials/trial_' + str(1) + '.pkl'
 with open(file_name, "rb") as open_file:
         data_list_trial = pickle.load(open_file)
 
-h_k = 50
+h_k = 100
+f_k = 25
 hidden_dim = 50
 output_size = data_list_trial[1][data_list_trial[1].columns[data_list_trial[1].columns.str.contains("id_onehot")]].shape[-1]
 
@@ -43,10 +44,12 @@ output_size = data_list_trial[1][data_list_trial[1].columns[data_list_trial[1].c
 # model = SimpleClassifier(Input_size,output_size, hidden_dim )
 
 ''' RNN model'''
-Input_size = (data_list_trial[0].shape[0]*data_list_trial[0].shape[1])
-n_layers =2
-model = RNN_Classifier(Input_size, h_k, output_size, hidden_dim,n_layers)
+# Input_size = (data_list_trial[0].shape[0]*data_list_trial[0].shape[1])
+# n_layers =2
+# model = RNN_Classifier(Input_size, h_k, output_size, hidden_dim,n_layers)
+''' CNN model'''
 
+model = CNN_Classifier()
 optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
 criterion = nn.CrossEntropyLoss(weight=torch.tensor(weight_phoneme))
 
@@ -61,7 +64,7 @@ trials_tr = np.arange(number_trials)+1
 trials_tr = np.delete(trials_tr, trials_te-1)
 
 ''' training and test'''
-for epochs in range(50):
+for epochs in range(20):
     print('epoch=%d'%(epochs))
     ''' train'''
     acc_total_tr = 0
@@ -73,9 +76,11 @@ for epochs in range(50):
 
     pp = 0
     for trial in trials_tr:
-        XDesign, y_tr = get_trial_data(data_add, trial, h_k,phones_code_dic, tensor_enable=True)
-
-        y_hat = model.forward(XDesign)
+        XDesign, y_tr = get_trial_data(data_add, trial, h_k,f_k,phones_code_dic, tensor_enable=False)
+        XDesign = np.swapaxes(XDesign, 1, 2)
+        XDesign = torch.tensor(XDesign, dtype=torch.float32)
+        y_tr = torch.tensor(y_tr, dtype=torch.float32)
+        y_hat = model(XDesign)
         loss = criterion(y_hat, y_tr)
         optimizer.zero_grad()
         loss.backward()
@@ -110,9 +115,12 @@ for epochs in range(50):
 
     pp = 0
     for trial in trials_te:
-        XDesign, y_te = get_trial_data(data_add, trial, h_k,phones_code_dic, tensor_enable=True)
+        XDesign, y_te = get_trial_data(data_add, trial, h_k,f_k,phones_code_dic, tensor_enable=False)
+        XDesign = np.swapaxes(XDesign, 1, 2)
+        XDesign = torch.tensor(XDesign, dtype=torch.float32)
+        y_te = torch.tensor(y_te, dtype=torch.float32)
 
-        y_hat = model.forward(XDesign)
+        y_hat = model(XDesign)
         loss = criterion(y_hat, y_te)
         y_hat = y_hat.detach().numpy()
         ''' apply the language model'''
