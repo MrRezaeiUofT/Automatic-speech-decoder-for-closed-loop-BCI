@@ -14,8 +14,9 @@ with open(data_add + "dataset_info.json", 'r') as openfile:
 N_gram = 2
 total_data = pd.read_csv(datasets_add + patient_id + '/' + 'Preprocessed_data/' + 'prepro_phoneme_neural_total_v1.csv')
 
-# '''  remove rows with 'sp' phonemes '''
-# total_data =total_data.drop(total_data[total_data.phoneme == 'sp'].index)
+''' Only consider the onset data'''
+non_phoneme_onset = total_data[total_data.phoneme_onset == 0].index.to_numpy()
+total_data = total_data.drop(non_phoneme_onset, axis=0)
 ''' visualization of the phoneme histograms'''
 total_data.phoneme.hist(log=True, bins=total_data.phoneme_id.nunique())
 count_phonemes, bb= np.histogram(total_data.phoneme_id.to_numpy(), total_data.phoneme_id.nunique())

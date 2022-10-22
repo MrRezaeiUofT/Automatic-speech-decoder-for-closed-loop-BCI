@@ -24,11 +24,11 @@ def get_trial_data(data_add,trial, h_k,f_k, phones_code_dic, tensor_enable):
         X_tr = X_tr.reshape([X_tr.shape[0], -1])
         X_tr-=X_tr.mean(axis=0)
         X_tr /= (X_tr.std(axis=0))
-        XDesign = calDesignMatrix_V2(X_tr, h_k + 1)  # .reshape([X_tr.shape[0], -1])
+        XDesign = calDesignMatrix_V2(X_tr, h_k + 1)
     else:
         X_tr -= X_tr.mean(axis=0)
         X_tr /= ( X_tr.std(axis=0))
-        XDesign = calDesignMatrix_V4(X_tr, h_k + 1, f_k)  # .reshape([X_tr.shape[0], -1])
+        XDesign = calDesignMatrix_V4(X_tr, h_k + 1, f_k)
 
 
     y_tr = data_list_trial[1][data_list_trial[1].columns[data_list_trial[1].columns.str.contains("id_onehot")]].to_numpy()
