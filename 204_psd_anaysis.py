@@ -2,8 +2,16 @@ from data_utilities import *
 import torch
 from deep_models import get_trial_data
 import pickle
+from sklearn.preprocessing import StandardScaler
+from sklearn.manifold import TSNE
+import seaborn as sns
+from sklearn.linear_model import LogisticRegression
+import matplotlib.pyplot as plt
+h_k = 100
+f_k=25
+number_trials = 80
+n_components = 2
 epsilon = 1e-5
-
 patient_id = 'DM1008'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
@@ -15,29 +23,27 @@ with open(data_add+'language_model_data.pkl', 'rb') as openfile:
 
 ''' calculate the unbalanced weight for the classifier '''
 pwtwt1, phoneme_duration_df, phones_NgramModel, phones_code_dic, count_phonemes = language_data
-
-
-
-
-h_k = 100
-f_k=25
-number_trials = 80
+keys= list(phones_code_dic.keys())
+sp_id = phones_code_dic['sp']
+nan_id = phones_code_dic['NAN']
 trials = np.arange(1,number_trials)
 
 ''' gather all features for the phonemes'''
 for trial in trials:
     if trial == 1:
-        XDesign_total, y_tr = get_trial_data(data_add, trial, h_k, f_k, phones_code_dic, tensor_enable=False)
-        phonemes_id_total = np.argmax(y_tr, axis=-1).reshape([-1,1])
+        XDesign_total, y_tr_total = get_trial_data(data_add, trial, h_k, f_k, phones_code_dic, tensor_enable=False)
+        phonemes_id_total = np.argmax(y_tr_total, axis=-1).reshape([-1,1])
+
 
     else:
         XDesign, y_tr = get_trial_data(data_add, trial, h_k, f_k, phones_code_dic, tensor_enable=False)
         phonemes_id = np.argmax(y_tr, axis=-1).reshape([-1,1])
         XDesign_total = np.concatenate([XDesign_total,XDesign], axis=0)
         phonemes_id_total = np.concatenate([phonemes_id_total, phonemes_id], axis=0)
+        y_tr_total = np.concatenate([y_tr_total, y_tr], axis=0)
 
 
-import matplotlib.pyplot as plt
+
 f, axes = plt.subplots(3, 3, figsize=(18,18), sharey=True)
 for ph_id in np.unique(phonemes_id_total):
     index_similar = np.where(phonemes_id_total == ph_id)[0]
@@ -66,19 +72,15 @@ for ph_id in np.unique(phonemes_id_total):
 
 
 ''' TNSE visualization'''
-from sklearn.preprocessing import StandardScaler
-from sklearn.manifold import TSNE
-import seaborn as sns
-X= np.divide(XDesign_total-XDesign_means.transpose(), XDesign_stds.transpose())
-X= X.reshape([X.shape[0],-1])
+
+X = np.divide(XDesign_total-XDesign_means.transpose(), XDesign_stds.transpose())[:,:,-1,:]
+X = X.reshape([X.shape[0], -1])
 scaler = StandardScaler()
-X =scaler.fit_transform(X)
-y= phonemes_id_total
-n_components = 2
+X = scaler.fit_transform(X)
 tsne = TSNE(n_components=n_components, verbose=1, perplexity=40, n_iter=300)
 tsne_results = tsne.fit_transform(X)
 finalDf = pd.DataFrame(data = tsne_results, columns = [['pc'+ str(ii) for ii in range(1,n_components+1)]])
-finalDf['target'] = y
+finalDf['target'] = phonemes_id_total
 f, axes = plt.subplots(7, 6, figsize=(32, 32), sharey=True, sharex=True)
 for ii in range(7):
     for jj in range(6):
@@ -93,19 +95,40 @@ plt.savefig(save_result_path+'tsne-phonemes.png')
 
 ''' simple classification'''
 
-from sklearn.linear_model import LogisticRegression
-X = np.divide(XDesign_total-XDesign_means.transpose(), XDesign_stds.transpose())
-y_onehot=  pd.get_dummies(
-        finalDf['target'].to_numpy().squeeze()).to_numpy()
-corr = np.zeros((y_onehot.shape[1],X.shape[-1]))
+X = np.divide(XDesign_total-XDesign_means.transpose(), XDesign_stds.transpose())[:,:,-1:,:]
+y_onehot=  y_tr_total
+corr = np.zeros((y_onehot.shape[1]-2,X.shape[-1]))
+# count_phonemes = np.delete(count_phonemes,[sp_id,nan_id])
 for jj in range(corr.shape[1]):
     print(jj)
     inputs=X[:,:,:,jj].mean(axis =1).reshape([X.shape[0], -1])
-    clf = LogisticRegression(random_state=0).fit(inputs, y)
+    outputs = np.argmax(y_onehot, axis=1)
+    weights = 1/(count_phonemes[outputs]+1)
+    weights /=weights.sum()
+    clf = LogisticRegression(random_state=0).fit(inputs, outputs,weights)
     y_hat = clf.predict_proba(inputs)
     corr[:,jj] = y_hat.max(axis=0)
-# indx_arr = np.array([13,37,23,26,29,20,19,12,6,21,4,16,37,8,31,14,25,28,30, 9, 24, 41,  5,  18, 3, 10])
+''' re assign phonemes id with deleting 'NAN' and 'sp' '''
+
+for ii in range(len(keys)):
+
+    if (ii< sp_id) and (ii< nan_id):
+        pass
+    elif (ii< sp_id) and (ii> nan_id):
+        phones_code_dic[keys[ii]] -=1
+    elif (ii > sp_id) and (ii < nan_id):
+        phones_code_dic[keys[ii]] -= 1
+    elif (ii > sp_id) and (ii > nan_id):
+        phones_code_dic[keys[ii]] -= 2
+    elif (ii == sp_id):
+        del phones_code_dic[keys[ii]]
+    elif  (ii == nan_id):
+        del phones_code_dic[keys[ii]]
+
+indx_arr = np.arange(corr.shape[0])
+# indx_arr = np.array([11, 35, 21, 24, 27, 18, 11, 17, 10, 5, 19, 3, 14, 31,6, 29, 12, 23, 26, 28, 22, 39, 4, 16, 2, 8, 9, 36, 34, 33, 30, 20, 1, 38])
 plt.figure()
-sns.heatmap((corr), annot=False, cmap='Blues')
+sns.heatmap((corr[indx_arr,:]), annot=False, cmap='Blues')
 plt.title('Encoding\n\n')
-plt.yticks(ticks=np.arange(len(list(phones_code_dic.keys()))), labels=list(phones_code_dic.keys()), rotation=0)
+plt.yticks(ticks=np.arange(len(np.array(list(phones_code_dic.keys()))[indx_arr])), labels=np.array(list(phones_code_dic.keys()))[indx_arr], rotation=0)
+plt.savefig(save_result_path+'predic-phonemes.png')

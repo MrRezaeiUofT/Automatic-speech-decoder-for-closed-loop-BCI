@@ -26,8 +26,8 @@ def get_trial_data(data_add,trial, h_k,f_k, phones_code_dic, tensor_enable):
         X_tr /= (X_tr.std(axis=0))
         XDesign = calDesignMatrix_V2(X_tr, h_k + 1)
     else:
-        X_tr -= X_tr.mean(axis=0)
-        X_tr /= ( X_tr.std(axis=0))
+        # X_tr -= X_tr.mean(axis=0)
+        # X_tr /= ( X_tr.std(axis=0))
         XDesign = calDesignMatrix_V4(X_tr, h_k + 1, f_k)
 
 
