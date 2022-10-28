@@ -13,7 +13,7 @@ total_data = pd.read_csv(datasets_add + patient_id + '/' + 'Preprocessed_data/' 
 # '''  remove rows with 'sp' phonemes '''
 # total_data =total_data.drop(total_data[total_data.phoneme == 'sp'].index)
 # time frequency neural features
-list_ECOG_chn = total_data.columns[total_data.columns.str.contains("feature")].to_list()
+list_ECOG_chn = total_data.columns[total_data.columns.str.contains("ecog")].to_list()
 frequency_bands = [[2, 30], [30, 50], [70, 150]]
 
 psd_config={

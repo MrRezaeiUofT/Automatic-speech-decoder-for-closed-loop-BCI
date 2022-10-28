@@ -22,8 +22,8 @@ def get_trial_data(data_add,trial, h_k,f_k, phones_code_dic, tensor_enable):
     X_tr = np.swapaxes(data_list_trial[0], 2, 0)
     if tensor_enable:
         X_tr = X_tr.reshape([X_tr.shape[0], -1])
-        X_tr-=X_tr.mean(axis=0)
-        X_tr /= (X_tr.std(axis=0))
+        # X_tr-=X_tr.mean(axis=0)
+        # X_tr /= (X_tr.std(axis=0))
         XDesign = calDesignMatrix_V2(X_tr, h_k + 1)
     else:
         # X_tr -= X_tr.mean(axis=0)

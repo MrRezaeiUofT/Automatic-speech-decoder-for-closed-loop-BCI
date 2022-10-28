@@ -3,13 +3,10 @@ import scipy.io
 import numpy as np
 import pandas as pd
 import scipy
-from mne import create_info, EpochsArray
-from scipy import signal
-from mne.time_frequency import (tfr_array_morlet)
-from sklearn.preprocessing import MinMaxScaler
 
+import scipy.interpolate as intrp
 
-def get_data(patient_id, datasets_add, feature_id, dt, sampling_freq):
+def get_data(patient_id, datasets_add, dt, sampling_freq):
     '''
     get the neural and phoneme information
     :param patient_id: patient ID
@@ -23,8 +20,10 @@ def get_data(patient_id, datasets_add, feature_id, dt, sampling_freq):
          zero_time: intial time of the all aligned dataframes here
     '''
     mat = scipy.io.loadmat('./Datasets/' + patient_id + '/' + 'neural_data_trial3.mat')
-    neural_df = pd.DataFrame(np.transpose(mat['dataframe'])[:, feature_id[0]:feature_id[1]],
-                             columns=['feature-' + str(ii) for ii in range(feature_id[0], feature_id[1])])
+    list_chn_df = pd.read_csv('./Datasets/' + patient_id + '/' +'CH_labels.csv')
+    list_chn_df = list_chn_df.T[0].reset_index()
+    neural_df = pd.DataFrame(np.transpose(mat['dataframe'])[:, :],
+                             columns=list_chn_df[0].to_list())
     neural_df = neural_df.rename(columns={'feature-0': 'time'})
     phones_df = pd.read_csv(
         datasets_add + patient_id + '/' + 'sub-' + patient_id + '_ses-intraop_task-lombard_annot-produced-phonemes.tsv',
@@ -145,7 +144,7 @@ def get_data(patient_id, datasets_add, feature_id, dt, sampling_freq):
         total_data['phoneme_id']).to_numpy()
     total_data['phoneme_onset'] = new_phones_df.phoneme_onset
     total_data['trial_id'] = new_phones_df.trial_id
-    return total_data, neural_df, phones_df, new_phones_df, trials_df, dt, zero_time, phones_code_dic
+    return total_data, neural_df, phones_df, new_phones_df, trials_df, dt, zero_time, phones_code_dic, list_chn_df[0].to_list()
 
 
 def listToString(s):
@@ -155,3 +154,16 @@ def listToString(s):
     # return string
     return (str1.join(s))
 
+def bspline_window(config_LSSM_MPP):
+    x = np.linspace(.35, .65, config_LSSM_MPP['decode_length'])
+    bsp_degree = config_LSSM_MPP['bsp_degree']
+    y_py = np.zeros((x.shape[0], bsp_degree * 2))
+    for i in range(bsp_degree * 2):
+        y_py[:, i] = intrp.BSpline(np.linspace(0, 1, 3 * bsp_degree + 1),
+                                   (np.arange(bsp_degree * 2) == i).astype(float), bsp_degree, extrapolate=False)(x)
+        # y_py[:, i]/= y_py[:, i].max()
+    # plt.figure()
+    # plt.plot(y_py)
+    # plt.title('b-spline windows')
+
+    return y_py
