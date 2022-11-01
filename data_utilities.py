@@ -3,7 +3,7 @@ import scipy.io
 import numpy as np
 import pandas as pd
 import scipy
-
+from patsy import dmatrix, build_design_matrices
 import scipy.interpolate as intrp
 
 def get_data(patient_id, datasets_add, dt, sampling_freq):
@@ -155,15 +155,16 @@ def listToString(s):
     return (str1.join(s))
 
 def bspline_window(config_LSSM_MPP):
-    x = np.linspace(.35, .65, config_LSSM_MPP['decode_length'])
+    x = np.linspace(0, 1, config_LSSM_MPP['decode_length'])
     bsp_degree = config_LSSM_MPP['bsp_degree']
-    y_py = np.zeros((x.shape[0], bsp_degree * 2))
-    for i in range(bsp_degree * 2):
-        y_py[:, i] = intrp.BSpline(np.linspace(0, 1, 3 * bsp_degree + 1),
-                                   (np.arange(bsp_degree * 2) == i).astype(float), bsp_degree, extrapolate=False)(x)
+    # y_py = np.zeros((x.shape[0], bsp_degree * 2))
+    # for i in range(bsp_degree * 2):
+    #     y_py[:, i] = intrp.BSpline(np.linspace(0, 1, 3 * bsp_degree + 1),
+    #                                (np.arange(bsp_degree * 2) == i).astype(float), bsp_degree, extrapolate=False)(x)
+    y = dmatrix("bs(x, df=6, degree=3, include_intercept=True) - 1", {"x": x})
         # y_py[:, i]/= y_py[:, i].max()
     # plt.figure()
     # plt.plot(y_py)
     # plt.title('b-spline windows')
 
-    return y_py
+    return y

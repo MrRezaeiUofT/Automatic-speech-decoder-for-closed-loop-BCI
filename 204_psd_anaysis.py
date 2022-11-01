@@ -8,6 +8,8 @@ import seaborn as sns
 from sklearn.linear_model import LogisticRegression
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
+from sklearn.decomposition import KernelPCA
+
 h_k = 100
 f_k=25
 number_trials = 80
@@ -22,7 +24,6 @@ save_result_path = datasets_add + patient_id + '/Results/' +'phonems_psd/'
 with open(data_add+'language_model_data.pkl', 'rb') as openfile:
     # Reading from json file
     language_data = pickle.load(openfile)
-
 pwtwt1, phoneme_duration_df, phones_NgramModel, phones_code_dic, count_phonemes = language_data
 keys= list(phones_code_dic.keys())
 sp_id = phones_code_dic['sp']
@@ -106,48 +107,62 @@ for ii in range(len(keys)):
         del phones_code_dic[keys[ii]]
     elif  (ii == nan_id):
         del phones_code_dic[keys[ii]]
-''' baselines'''
+''' define baselines'''
 config_bs = {
-        'X_bounds': [-1, 1],  # define lower and upper bound of state estimation
-        'X_length': 100,  # the whole state bound quantized tp X_length values for numerical calculations
         'decode_length': h_k+1+f_k,
-        'bsp_degree':10,
+        'bsp_degree':40,
     }
-bsp_w = bspline_window(config_bs)[:, config_bs['bsp_degree'] // 2:-config_bs['bsp_degree'] // 2]
+bsp_w = bspline_window(config_bs)
 ''' simple classification'''
+number_comp = 7
 input_type= 'spline'
-X = XDesign_total[:,:,:,:] ## only high gamma features
+features= [-1] # high-gamma=-1, low-gamma =-3, med-gamma=-2
+X = XDesign_total[:,:,features,:] ##
 y_onehot=  y_tr_total
-corr = np.zeros((y_onehot.shape[1]-2,X.shape[-1]))
+corr = np.zeros((y_onehot.shape[1]-2,X.shape[-1],2))
 # count_phonemes = np.delete(count_phonemes,[sp_id,nan_id])
 for jj in range(corr.shape[1]):
     print(jj)
     if input_type == 'simple':
-        inputs=X[:,:,jj].mean(axis =1).reshape([X.shape[0], -1])
+        inputs=X[:,:,:,jj].mean(axis =1).reshape([X.shape[0], -1])
     elif input_type == 'spline':
         inputs = np.swapaxes(X, 1, -1)[:,jj,:,:].dot(bsp_w).reshape([X.shape[0], -1])
+    elif input_type == 'kernel_pca':
+        temp = X[:, :, :, jj].squeeze().reshape([X.shape[0], -1])
+        Kernel_pca = KernelPCA(n_components=number_comp, kernel="rbf")
+        inputs = Kernel_pca.fit_transform(temp)
+
     outputs = np.argmax(y_onehot, axis=1)
     weights = 1/(count_phonemes[outputs]+1)
-    weights /=weights.sum()
-    clf = LogisticRegression(penalty = 'l2', solver='lbfgs', random_state=0).fit(inputs, outputs,weights)
+    weights /=weights.max()
+    clf = LogisticRegression(penalty = 'l2', solver='liblinear',class_weight='balanced', random_state=0).fit(inputs, outputs)
     y_hat = clf.predict_proba(inputs)
     # GLM_model = sm.GLM(y_onehot, inputs, family=sm.families.)
     # GLM_model_results = GLM_model.fit_regularized(L1_wt=1, refit=False)
     # y_hat = GLM_model.predict(GLM_model_results.params, inputs)
-    corr[:,jj] = y_hat.max(axis=0)
+    corr[:,jj,0] = np.mean(y_hat,axis=0)
+    corr[:, jj,1] = np.max(y_hat, axis=0)
 
 ''' sort LFP channels'''
 chn_df = pd.read_csv( datasets_add + patient_id + '/sub-DM1008_electrodes.tsv', sep='\t')
-chn_df = chn_df.sort_values(by=['HCPMMP1_label_2'])[chn_df.name.str.contains("ecog")]
+chn_df = chn_df.sort_values(by=['HCPMMP1_label_1'])[chn_df.name.str.contains("ecog")]
 indx_ch_arr = chn_df.index
-# show the result
+''' sort phonemes channels'''
 # indx_ph_arr = np.arange(corr.shape[0])
-indx_ph_arr = np.array([11, 35, 21, 24, 27, 18, 17, 10, 5, 19, 3, 14, 31,6, 29, 12, 23, 26, 28, 22, 39, 4, 16, 2, 8, 9, 36, 34, 33, 30, 20, 1, 38])
+# indx_ph_arr = np.array([0, 3, 5,6,7,10,11,12,14,15,17,18,19,21,23, 24,26,27,28,29,31,35, 36, 38, 1, 2,4,8,9,13,16,20,22,25,30,32,33,34,37,39]) # vows and con
+indx_ph_arr = np.array([11, 35, 21, 24, 27, 18, 17, 10, 5, 19, 3, 14, 31,6, 29, 12, 23, 26, 28, 22, 39, 4, 16, 2, 8, 9, 36, 34, 33, 30, 20, 1, 38]) # Edward cheng
 plt.figure()
 rearranged_cov = corr[:,indx_ch_arr]
 rearranged_cov = rearranged_cov[indx_ph_arr,:]
-sns.heatmap((rearranged_cov), annot=False, cmap='Blues')
-plt.title('Encoding\n\n')
+sns.heatmap((rearranged_cov[:,:,0]), annot=False, cmap='Blues')
+plt.title('Encoding-mean\n\n')
+plt.yticks(ticks=np.arange(len(np.array(list(phones_code_dic.keys()))[indx_ph_arr])), labels=np.array(list(phones_code_dic.keys()))[indx_ph_arr], rotation=0)
+plt.xticks(ticks=np.arange(len(chn_df.HCPMMP1_label_2.to_list())), labels=np.array(chn_df.HCPMMP1_label_1.to_list()), rotation=90)
+plt.savefig(save_result_path+'predic-phonemes-mean.png')
+
+plt.figure()
+sns.heatmap((rearranged_cov[:,:,1]), annot=False, cmap='Blues')
+plt.title('Encoding-max\n\n')
 plt.yticks(ticks=np.arange(len(np.array(list(phones_code_dic.keys()))[indx_ph_arr])), labels=np.array(list(phones_code_dic.keys()))[indx_ph_arr], rotation=0)
 plt.xticks(ticks=np.arange(len(chn_df.HCPMMP1_label_2.to_list())), labels=np.array(chn_df.HCPMMP1_label_2.to_list()), rotation=90)
-plt.savefig(save_result_path+'predic-phonemes.png')
+plt.savefig(save_result_path+'predic-phonemes-max.png')
