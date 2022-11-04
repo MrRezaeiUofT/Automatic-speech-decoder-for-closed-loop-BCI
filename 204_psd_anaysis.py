@@ -110,7 +110,7 @@ for ii in range(len(keys)):
 ''' define baselines'''
 config_bs = {
         'decode_length': h_k+1+f_k,
-        'bsp_degree':40,
+        'bsp_degree':10,
     }
 bsp_w = bspline_window(config_bs)
 ''' simple classification'''
@@ -145,19 +145,19 @@ for jj in range(corr.shape[1]):
 
 ''' sort LFP channels'''
 chn_df = pd.read_csv( datasets_add + patient_id + '/sub-DM1008_electrodes.tsv', sep='\t')
-chn_df = chn_df.sort_values(by=['HCPMMP1_label_1'])[chn_df.name.str.contains("ecog")]
+chn_df = chn_df.sort_values(by=['HCPMMP1_label_2'])[chn_df.name.str.contains("ecog")]
 indx_ch_arr = chn_df.index
 ''' sort phonemes channels'''
 # indx_ph_arr = np.arange(corr.shape[0])
-# indx_ph_arr = np.array([0, 3, 5,6,7,10,11,12,14,15,17,18,19,21,23, 24,26,27,28,29,31,35, 36, 38, 1, 2,4,8,9,13,16,20,22,25,30,32,33,34,37,39]) # vows and con
-indx_ph_arr = np.array([11, 35, 21, 24, 27, 18, 17, 10, 5, 19, 3, 14, 31,6, 29, 12, 23, 26, 28, 22, 39, 4, 16, 2, 8, 9, 36, 34, 33, 30, 20, 1, 38]) # Edward cheng
+indx_ph_arr = np.array([0, 3, 5,6,7,10,11,12,14,15,17,18,19,21,23, 24,26,27,28,29,31,35, 36, 38, 1, 2,4,8,9,13,16,20,22,25,30,32,33,34,37,39]) # vows and con
+# indx_ph_arr = np.array([11, 35, 21, 24, 27, 18, 17, 10, 5, 19, 3, 14, 31,6, 29, 12, 23, 26, 28, 22, 39, 4, 16, 2, 8, 9, 36, 34, 33, 30, 20, 1, 38]) # Edward cheng
 plt.figure()
 rearranged_cov = corr[:,indx_ch_arr]
 rearranged_cov = rearranged_cov[indx_ph_arr,:]
 sns.heatmap((rearranged_cov[:,:,0]), annot=False, cmap='Blues')
 plt.title('Encoding-mean\n\n')
 plt.yticks(ticks=np.arange(len(np.array(list(phones_code_dic.keys()))[indx_ph_arr])), labels=np.array(list(phones_code_dic.keys()))[indx_ph_arr], rotation=0)
-plt.xticks(ticks=np.arange(len(chn_df.HCPMMP1_label_2.to_list())), labels=np.array(chn_df.HCPMMP1_label_1.to_list()), rotation=90)
+plt.xticks(ticks=np.arange(len(chn_df.HCPMMP1_label_2.to_list())), labels=np.array(chn_df.HCPMMP1_label_2.to_list()), rotation=90)
 plt.savefig(save_result_path+'predic-phonemes-mean.png')
 
 plt.figure()

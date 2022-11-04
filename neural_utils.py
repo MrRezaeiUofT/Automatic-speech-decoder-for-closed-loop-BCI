@@ -11,15 +11,44 @@ import json
 
 def get_psd_features(total_data_df, psd_config, patient_id, saving_add):
 
-
+    margin_length = psd_config['margin_length']
     if patient_id == 'DM1008':
        pass
     else:
         pass
     for trial in total_data_df.trial_id.unique():
         print('trial=%d'%(trial))
-        trial_df = total_data_df.loc[(total_data_df.trial_id == trial) | (total_data_df.baseline_flag == trial)].reset_index()
-        indx_baselines = trial_df.loc[trial_df.baseline_flag == trial].index.to_numpy()
+        if trial == total_data_df.trial_id.unique()[0]: #
+            indx_df = total_data_df.loc[
+                (total_data_df.trial_id == trial) | (total_data_df.baseline_flag == trial)].index
+
+            af_indx = np.arange(indx_df[-1] + 1, indx_df[-1] + 1 + margin_length, 1)
+
+            total_index = np.concatenate([ indx_df, af_indx], axis=0)
+            trial_df = total_data_df.loc[total_index].reset_index()
+            indx_baselines = trial_df.loc[(trial_df.baseline_flag == trial) & (
+                        trial_df.index < (trial_df.shape[0] - margin_length))].index.to_numpy()
+
+        elif trial == total_data_df.trial_id.unique()[-1]:
+            indx_df = total_data_df.loc[
+                (total_data_df.trial_id == trial) | (total_data_df.baseline_flag == trial)].index
+            bf_indx = np.arange( indx_df[0] - margin_length, indx_df[0], 1)
+
+
+            total_index = np.concatenate([bf_indx, indx_df], axis=0)
+            trial_df = total_data_df.loc[total_index].reset_index()
+            indx_baselines = trial_df.loc[(trial_df.baseline_flag == trial) & (trial_df.index > margin_length) ].index.to_numpy()
+
+
+        else:
+            indx_df = total_data_df.loc[(total_data_df.trial_id == trial) | (total_data_df.baseline_flag == trial)].index
+            bf_indx = np.arange(indx_df[0]-margin_length,indx_df[0], 1)
+            af_indx = np.arange(indx_df[-1] + 1, indx_df[-1] + 1 + margin_length, 1)
+
+            total_index = np.concatenate([bf_indx, indx_df, af_indx], axis=0)
+            trial_df = total_data_df.loc[total_index].reset_index()
+            indx_baselines = trial_df.loc[(trial_df.baseline_flag == trial) & (trial_df.index > margin_length) & (
+                    trial_df.index< (trial_df.shape[0]- margin_length)) ].index.to_numpy()
 
         neural_data = np.expand_dims(np.transpose(trial_df[psd_config['chnls']].to_numpy()), axis=0)
         neural_psd = psd_extractor(neural_data, psd_config, indx_baselines, type='power')
@@ -35,7 +64,21 @@ def get_psd_features(total_data_df, psd_config, patient_id, saving_add):
                     neural_psd[ii, jj, :] = np.convolve(neural_psd[ii, jj, :], window, 'same')
         neural_psd_band, freqs = feature_mapping(neural_psd, psd_config)
         trial_df = trial_df.drop(indx_baselines)
-        neural_psd_band = np.delete(neural_psd_band,indx_baselines, axis=-1)
+        neural_psd_band = np.delete(neural_psd_band, indx_baselines, axis=-1)
+        if trial == total_data_df.trial_id.unique()[0]:
+            temp_indx_bf = np.arange(0,margin_length)
+            trial_df = trial_df.drop(temp_indx_bf)
+            neural_psd_band = np.delete(neural_psd_band, temp_indx_bf, axis=-1)
+        elif trial == total_data_df.trial_id.unique()[-1]:
+            temp_indx_af = np.arange(trial_df.shape[0]-1,trial_df.shape[0]-1- margin_length,-1)
+            trial_df = trial_df.drop(temp_indx_af)
+            neural_psd_band = np.delete(neural_psd_band, temp_indx_af, axis=-1)
+        else:
+            temp_indx_bf = np.arange(0, margin_length)
+            temp_indx_af = np.arange(trial_df.shape[0] - 1, trial_df.shape[0] - 1 - margin_length, -1)
+            temp_indx = np.concatenate([temp_indx_bf, temp_indx_af])
+            trial_df = trial_df.drop(temp_indx)
+            neural_psd_band = np.delete(neural_psd_band, temp_indx, axis=-1)
 
         file_name = saving_add + 'trial_' + str(trial) + '.pkl'
         with  open(file_name, "wb") as open_file:
@@ -55,7 +98,7 @@ def psd_extractor(neural_data, psd_config, index_baselines, type='power'):
                                  output='avg_power', verbose=0)
         if len(index_baselines > 0):
             rescale(power, epochs.times, (np.min(index_baselines) / psd_config['sampling_freq'], np.max(index_baselines) / psd_config['sampling_freq']),
-            mode='mean', copy=False, verbose=2)
+            mode='zscore', copy=False, verbose=2)
 
     return power
 

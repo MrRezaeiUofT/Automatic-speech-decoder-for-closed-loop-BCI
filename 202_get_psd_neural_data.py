@@ -14,12 +14,13 @@ total_data = pd.read_csv(datasets_add + patient_id + '/' + 'Preprocessed_data/' 
 # total_data =total_data.drop(total_data[total_data.phoneme == 'sp'].index)
 # time frequency neural features
 list_ECOG_chn = total_data.columns[total_data.columns.str.contains("ecog")].to_list()
-frequency_bands = [[2, 30], [30, 50], [70, 150]]
+frequency_bands = [[2, 25], [30, 50], [70, 150]]
 
 psd_config={
     'chnls': list_ECOG_chn,
     'FreqBands': frequency_bands,
     'sampling_freq': 1000//dataset_info['dt'],
+    'margin_length': 500//dataset_info['dt'],
     'freq_stp': 1,
     'L_cut_freq': 2,
     'H_cut_freq': 150,
