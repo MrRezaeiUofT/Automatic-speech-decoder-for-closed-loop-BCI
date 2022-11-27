@@ -6,7 +6,7 @@ import scipy
 from patsy import dmatrix, build_design_matrices
 import scipy.interpolate as intrp
 
-def get_data(patient_id, datasets_add, dt, sampling_freq):
+def get_data(patient_id, datasets_add, dt, sampling_freq, file_name):
     '''
     get the neural and phoneme information
     :param patient_id: patient ID
@@ -19,7 +19,7 @@ def get_data(patient_id, datasets_add, dt, sampling_freq):
          dt: resolution of quantized time
          zero_time: intial time of the all aligned dataframes here
     '''
-    mat = scipy.io.loadmat('./Datasets/' + patient_id + '/' + 'neural_data_trial3.mat')
+    mat = scipy.io.loadmat('./Datasets/' + patient_id + '/' + file_name+'.mat')
     list_chn_df = pd.read_csv('./Datasets/' + patient_id + '/' +'CH_labels.csv')
     list_chn_df = list_chn_df.T[0].reset_index()
     neural_df = pd.DataFrame(np.transpose(mat['dataframe'])[:, :],
@@ -80,6 +80,10 @@ def get_data(patient_id, datasets_add, dt, sampling_freq):
     neural_df = neural_df.groupby(by=["time"], dropna=False).mean()
     neural_df = neural_df.apply(lambda x: x.fillna(x.mean()), axis=0)
 
+    ''' synchronize'''
+    if neural_df.index[0] !=0:
+        temp_df = pd.DataFrame(np.zeros((neural_df.index[0], len(neural_df.columns))), columns=neural_df.columns)
+        neural_df=pd.concat([temp_df,neural_df])
     ''' add baseline identifier to neural df'''
     neural_df['baseline_flag'] = 0
     for itr in trials_df.trial_id.unique():
@@ -93,6 +97,10 @@ def get_data(patient_id, datasets_add, dt, sampling_freq):
 
     ''' re-assign the phoneme ids'''
     phones_code_dic = dict(zip(phones_df.phoneme.unique(), np.arange(phones_df.phoneme.nunique())))
+    if 'NAN'  in phones_code_dic:
+        pass
+    else:
+        phones_code_dic.update({'NAN':len(phones_df.phoneme.unique()) })
     phones_df['phoneme_id'] = 0
     phones_df['phoneme_id'] = phones_df['phoneme'].apply(lambda x: phones_code_dic[x])
     phones_df['phoneme_onset'] = 0

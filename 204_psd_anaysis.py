@@ -10,13 +10,13 @@ import statsmodels.api as sm
 import matplotlib.pyplot as plt
 from sklearn.decomposition import KernelPCA
 
-h_k = 100
+h_k = 120
 f_k=25
 number_trials = 80
 n_components = 2
 epsilon = 1e-5
 trials = np.arange(1,number_trials)
-patient_id = 'DM1008'
+patient_id = 'DM1012'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 save_result_path = datasets_add + patient_id + '/Results/' +'phonems_psd/'
@@ -27,6 +27,10 @@ with open(data_add+'language_model_data.pkl', 'rb') as openfile:
 pwtwt1, phoneme_duration_df, phones_NgramModel, phones_code_dic, count_phonemes = language_data
 keys= list(phones_code_dic.keys())
 sp_id = phones_code_dic['sp']
+# if 'NAN' in phones_code_dic:
+#     pass
+# else:
+#     phones_code_dic.update({'NAN': len(phones_code_dic)})
 nan_id = phones_code_dic['NAN']
 
 
@@ -107,6 +111,11 @@ for ii in range(len(keys)):
         del phones_code_dic[keys[ii]]
     elif  (ii == nan_id):
         del phones_code_dic[keys[ii]]
+# pwtwt1_new = np.delete(pwtwt1, (sp_id), axis=0)
+# pwtwt1_new = np.delete(pwtwt1_new, (nan_id), axis=0)
+# pwtwt1_new = np.delete(pwtwt1_new, (sp_id), axis=1)
+# pwtwt1_new = np.delete(pwtwt1_new, (nan_id), axis=1)
+# pwtwt1_new=pwtwt1_new/(pwtwt1_new.sum(axis=1))
 ''' define baselines'''
 config_bs = {
         'decode_length': h_k+1+f_k,
@@ -157,12 +166,12 @@ rearranged_cov = rearranged_cov[indx_ph_arr,:]
 sns.heatmap((rearranged_cov[:,:,0]), annot=False, cmap='Blues')
 plt.title('Encoding-mean\n\n')
 plt.yticks(ticks=np.arange(len(np.array(list(phones_code_dic.keys()))[indx_ph_arr])), labels=np.array(list(phones_code_dic.keys()))[indx_ph_arr], rotation=0)
-plt.xticks(ticks=np.arange(len(chn_df.HCPMMP1_label_2.to_list())), labels=np.array(chn_df.HCPMMP1_label_2.to_list()), rotation=90)
+plt.xticks(ticks=np.arange(len(chn_df.HCPMMP1_label_1.to_list())), labels=np.array(chn_df.HCPMMP1_label_1.to_list()), rotation=90)
 plt.savefig(save_result_path+'predic-phonemes-mean.png')
 
 plt.figure()
 sns.heatmap((rearranged_cov[:,:,1]), annot=False, cmap='Blues')
 plt.title('Encoding-max\n\n')
 plt.yticks(ticks=np.arange(len(np.array(list(phones_code_dic.keys()))[indx_ph_arr])), labels=np.array(list(phones_code_dic.keys()))[indx_ph_arr], rotation=0)
-plt.xticks(ticks=np.arange(len(chn_df.HCPMMP1_label_2.to_list())), labels=np.array(chn_df.HCPMMP1_label_2.to_list()), rotation=90)
+plt.xticks(ticks=np.arange(len(chn_df.HCPMMP1_label_1.to_list())), labels=np.array(chn_df.HCPMMP1_label_1.to_list()), rotation=90)
 plt.savefig(save_result_path+'predic-phonemes-max.png')
