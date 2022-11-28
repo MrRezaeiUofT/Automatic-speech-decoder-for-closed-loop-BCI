@@ -15,11 +15,15 @@ f_k=25
 number_trials = 80
 n_components = 2
 epsilon = 1e-5
-trials = np.arange(1,number_trials)
+
 patient_id = 'DM1012'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 save_result_path = datasets_add + patient_id + '/Results/' +'phonems_psd/'
+trials_df=pd.read_csv(
+        datasets_add + patient_id + '/' + 'sub-' + patient_id + '_ses-intraop_task-lombard_annot-produced-sentences.tsv',
+        sep='\t')
+trials =trials_df.trial_id.to_numpy()
 ''' get language model'''
 with open(data_add+'language_model_data.pkl', 'rb') as openfile:
     # Reading from json file
@@ -27,10 +31,10 @@ with open(data_add+'language_model_data.pkl', 'rb') as openfile:
 pwtwt1, phoneme_duration_df, phones_NgramModel, phones_code_dic, count_phonemes = language_data
 keys= list(phones_code_dic.keys())
 sp_id = phones_code_dic['sp']
-# if 'NAN' in phones_code_dic:
-#     pass
-# else:
-#     phones_code_dic.update({'NAN': len(phones_code_dic)})
+if 'NAN' in phones_code_dic:
+    pass
+else:
+    phones_code_dic.update({'NAN': len(phones_code_dic)})
 nan_id = phones_code_dic['NAN']
 
 
@@ -153,25 +157,25 @@ for jj in range(corr.shape[1]):
     corr[:, jj,1] = np.max(y_hat, axis=0)
 
 ''' sort LFP channels'''
-chn_df = pd.read_csv( datasets_add + patient_id + '/sub-DM1008_electrodes.tsv', sep='\t')
+chn_df = pd.read_csv( datasets_add + patient_id + '/sub-'+patient_id+'_electrodes.tsv', sep='\t')
 chn_df = chn_df.sort_values(by=['HCPMMP1_label_2'])[chn_df.name.str.contains("ecog")]
 indx_ch_arr = chn_df.index
 ''' sort phonemes channels'''
-# indx_ph_arr = np.arange(corr.shape[0])
-indx_ph_arr = np.array([0, 3, 5,6,7,10,11,12,14,15,17,18,19,21,23, 24,26,27,28,29,31,35, 36, 38, 1, 2,4,8,9,13,16,20,22,25,30,32,33,34,37,39]) # vows and con
+indx_ph_arr = np.arange(corr.shape[0])
+# indx_ph_arr = np.array([0, 3, 5,6,7,10,11,12,14,15,17,18,19,21,23, 24,26,27,28,29,31,35, 36, 38, 1, 2,4,8,9,13,16,20,22,25,30,32,33,34,37,39]) # vows and con
 # indx_ph_arr = np.array([11, 35, 21, 24, 27, 18, 17, 10, 5, 19, 3, 14, 31,6, 29, 12, 23, 26, 28, 22, 39, 4, 16, 2, 8, 9, 36, 34, 33, 30, 20, 1, 38]) # Edward cheng
 plt.figure()
 rearranged_cov = corr[:,indx_ch_arr]
 rearranged_cov = rearranged_cov[indx_ph_arr,:]
 sns.heatmap((rearranged_cov[:,:,0]), annot=False, cmap='Blues')
-plt.title('Encoding-mean\n\n')
+plt.title('Encoding-mean-patient'+patient_id)
 plt.yticks(ticks=np.arange(len(np.array(list(phones_code_dic.keys()))[indx_ph_arr])), labels=np.array(list(phones_code_dic.keys()))[indx_ph_arr], rotation=0)
 plt.xticks(ticks=np.arange(len(chn_df.HCPMMP1_label_1.to_list())), labels=np.array(chn_df.HCPMMP1_label_1.to_list()), rotation=90)
 plt.savefig(save_result_path+'predic-phonemes-mean.png')
 
 plt.figure()
 sns.heatmap((rearranged_cov[:,:,1]), annot=False, cmap='Blues')
-plt.title('Encoding-max\n\n')
+plt.title('Encoding-max-patient'+patient_id)
 plt.yticks(ticks=np.arange(len(np.array(list(phones_code_dic.keys()))[indx_ph_arr])), labels=np.array(list(phones_code_dic.keys()))[indx_ph_arr], rotation=0)
 plt.xticks(ticks=np.arange(len(chn_df.HCPMMP1_label_1.to_list())), labels=np.array(chn_df.HCPMMP1_label_1.to_list()), rotation=90)
 plt.savefig(save_result_path+'predic-phonemes-max.png')
