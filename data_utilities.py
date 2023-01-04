@@ -37,7 +37,10 @@ def get_data(patient_id, datasets_add, dt, sampling_freq, file_name):
         sep='\t')
     trials_df = pd.read_csv(
         datasets_add + patient_id + '/' + 'sub-' + patient_id + '_ses-intraop_task-lombard_annot-trials.tsv', sep='\t')
-
+    ''' upper case all phonems'''
+    phones_df['phoneme'] = phones_df['phoneme'].str.upper()
+    ''' Replace missing values with NAN'''
+    phones_df['phoneme'] = phones_df['phoneme'].fillna('NAN')
     ''' drop nans in trial annotations'''
     trials_df = trials_df.dropna()
 
@@ -101,6 +104,8 @@ def get_data(patient_id, datasets_add, dt, sampling_freq, file_name):
         pass
     else:
         phones_code_dic.update({'NAN':len(phones_df.phoneme.unique()) })
+    # if phones_df['phoneme'].isin(['nan']):
+    #     phones_df[phones_df['phoneme'] == 'nan']['phoneme']= 'NAN'
     phones_df['phoneme_id'] = 0
     phones_df['phoneme_id'] = phones_df['phoneme'].apply(lambda x: phones_code_dic[x])
     phones_df['phoneme_onset'] = 0
@@ -132,11 +137,12 @@ def get_data(patient_id, datasets_add, dt, sampling_freq, file_name):
                 , columns=phones_df.columns))
         else:
             pass
-        temp_df = phones_df.iloc[ii].values.repeat(phones_df.duration[ii]).reshape(
-                [-1, phones_df.duration[ii]]).transpose()
-        temp_df[0, phoneme_onset_cul_indx] = 1
-        new_phones_df = new_phones_df.append(pd.DataFrame(temp_df
-            , columns=phones_df.columns))
+        if np.size(phones_df.iloc[ii].values.repeat(phones_df.duration[ii])) != 0 :
+            temp_df = phones_df.iloc[ii].values.repeat(phones_df.duration[ii]).reshape(
+                    [-1, phones_df.duration[ii]]).transpose()
+            temp_df[0, phoneme_onset_cul_indx] = 1
+            new_phones_df = new_phones_df.append(pd.DataFrame(temp_df
+                , columns=phones_df.columns))
 
     new_phones_df = new_phones_df.reset_index()
 

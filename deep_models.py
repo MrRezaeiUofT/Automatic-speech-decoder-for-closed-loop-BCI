@@ -35,7 +35,7 @@ def get_trial_data(data_add,trial, h_k,f_k, phones_code_dic, tensor_enable):
 
 
     ''' delete 'sp' and 'NaN'  and non-onset_phonemes from dataset'''
-    sp_index = np.where(np.argmax(y_tr, axis=1) == phones_code_dic['sp'])[0]
+    sp_index = np.where(np.argmax(y_tr, axis=1) == phones_code_dic['SP'])[0]
     nan_index = np.where(np.argmax(y_tr, axis=1) == phones_code_dic['NAN'])[0]
     non_phoneme_onset = data_list_trial[1][data_list_trial[1].phoneme_onset == 0].index.to_numpy()
     delet_phonemes_indx = np.unique(np.concatenate([nan_index, sp_index, non_phoneme_onset],axis=0))

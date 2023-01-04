@@ -1,7 +1,7 @@
 from data_utilities import *
 from neural_utils import *
 
-patient_id = 'DM1012'
+patient_id = 'DM1007'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 # Opening JSON file

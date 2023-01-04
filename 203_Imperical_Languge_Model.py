@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import json
 import pickle
 from model_utils import get_language_components
-patient_id = 'DM1012'
+patient_id = 'DM1007'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 # Opening JSON file

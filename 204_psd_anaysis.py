@@ -16,7 +16,7 @@ number_trials = 80
 n_components = 2
 epsilon = 1e-5
 
-patient_id = 'DM1012'
+patient_id = 'DM1005'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 save_result_path = datasets_add + patient_id + '/Results/' +'phonems_psd/'
@@ -30,7 +30,7 @@ with open(data_add+'language_model_data.pkl', 'rb') as openfile:
     language_data = pickle.load(openfile)
 pwtwt1, phoneme_duration_df, phones_NgramModel, phones_code_dic, count_phonemes = language_data
 keys= list(phones_code_dic.keys())
-sp_id = phones_code_dic['sp']
+sp_id = phones_code_dic['SP']
 if 'NAN' in phones_code_dic:
     pass
 else:
@@ -132,7 +132,7 @@ input_type= 'spline'
 features= [-1] # high-gamma=-1, low-gamma =-3, med-gamma=-2
 X = XDesign_total[:,:,features,:] ##
 y_onehot=  y_tr_total
-corr = np.zeros((y_onehot.shape[1]-2,X.shape[-1],2))
+corr = np.zeros((y_onehot.shape[1]-2,X.shape[-1],3))
 # count_phonemes = np.delete(count_phonemes,[sp_id,nan_id])
 for jj in range(corr.shape[1]):
     print(jj)
@@ -155,6 +155,7 @@ for jj in range(corr.shape[1]):
     # y_hat = GLM_model.predict(GLM_model_results.params, inputs)
     corr[:,jj,0] = np.mean(y_hat,axis=0)
     corr[:, jj,1] = np.max(y_hat, axis=0)
+    corr[:, jj, 2] = np.max(np.abs(clf.coef_), axis=1).squeeze()
 
 ''' sort LFP channels'''
 chn_df = pd.read_csv( datasets_add + patient_id + '/sub-'+patient_id+'_electrodes.tsv', sep='\t')
@@ -164,18 +165,27 @@ indx_ch_arr = chn_df.index
 indx_ph_arr = np.arange(corr.shape[0])
 # indx_ph_arr = np.array([0, 3, 5,6,7,10,11,12,14,15,17,18,19,21,23, 24,26,27,28,29,31,35, 36, 38, 1, 2,4,8,9,13,16,20,22,25,30,32,33,34,37,39]) # vows and con
 # indx_ph_arr = np.array([11, 35, 21, 24, 27, 18, 17, 10, 5, 19, 3, 14, 31,6, 29, 12, 23, 26, 28, 22, 39, 4, 16, 2, 8, 9, 36, 34, 33, 30, 20, 1, 38]) # Edward cheng
-plt.figure()
+plt.figure(figsize=(28,14))
 rearranged_cov = corr[:,indx_ch_arr]
 rearranged_cov = rearranged_cov[indx_ph_arr,:]
 sns.heatmap((rearranged_cov[:,:,0]), annot=False, cmap='Blues')
+labels_ytick = np.array(list(phones_code_dic.keys()))[indx_ph_arr]
+labels_xtick = chn_df.HCPMMP1_label_1.to_list()
 plt.title('Encoding-mean-patient'+patient_id)
-plt.yticks(ticks=np.arange(len(np.array(list(phones_code_dic.keys()))[indx_ph_arr])), labels=np.array(list(phones_code_dic.keys()))[indx_ph_arr], rotation=0)
-plt.xticks(ticks=np.arange(len(chn_df.HCPMMP1_label_1.to_list())), labels=np.array(chn_df.HCPMMP1_label_1.to_list()), rotation=90)
+plt.yticks(ticks=np.arange(len(labels_ytick)), labels=labels_ytick, rotation=0)
+plt.xticks(ticks=np.arange(len(labels_xtick)), labels=np.array(labels_xtick), rotation=90)
 plt.savefig(save_result_path+'predic-phonemes-mean.png')
 
-plt.figure()
+plt.figure(figsize=(28,14))
 sns.heatmap((rearranged_cov[:,:,1]), annot=False, cmap='Blues')
 plt.title('Encoding-max-patient'+patient_id)
-plt.yticks(ticks=np.arange(len(np.array(list(phones_code_dic.keys()))[indx_ph_arr])), labels=np.array(list(phones_code_dic.keys()))[indx_ph_arr], rotation=0)
-plt.xticks(ticks=np.arange(len(chn_df.HCPMMP1_label_1.to_list())), labels=np.array(chn_df.HCPMMP1_label_1.to_list()), rotation=90)
+plt.yticks(ticks=np.arange(len(labels_ytick)), labels=labels_ytick, rotation=0)
+plt.xticks(ticks=np.arange(len(labels_xtick)), labels=np.array(labels_xtick), rotation=90)
 plt.savefig(save_result_path+'predic-phonemes-max.png')
+
+plt.figure(figsize=(28,14))
+sns.heatmap((rearranged_cov[:,:,2]), annot=False, cmap='Blues')
+plt.title('Encoding-max-patient'+patient_id)
+plt.yticks(ticks=np.arange(len(labels_ytick)), labels=labels_ytick, rotation=0)
+plt.xticks(ticks=np.arange(len(labels_xtick)), labels=np.array(labels_xtick), rotation=90)
+plt.savefig(save_result_path+'max_encoding_weight.png')

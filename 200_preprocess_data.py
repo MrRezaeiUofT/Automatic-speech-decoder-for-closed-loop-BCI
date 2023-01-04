@@ -1,7 +1,7 @@
 from data_utilities import *
 import json
 
-patient_id = 'DM1012'
+patient_id = 'DM1007'
 datasets_add = './Datasets/'
 
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
@@ -15,7 +15,7 @@ total_data, neural_df, phonemes_df, new_phonemes_df, trials_df, dt, zero_time, p
                                                                                                           datasets_add,
                                                                                                           dataset_info['dt'],
                                                                                                           dataset_info['sampling_freq'],
-                                                                                                                        'DM1012_raw_trial2')
+                                                                                                                        'neural_data_trial1')
 dataset_info['zero_time'] = zero_time
 dataset_info['feature_id'] = feature_list
 total_data.to_csv(data_add + 'prepro_phoneme_neural_total_v1.csv')
