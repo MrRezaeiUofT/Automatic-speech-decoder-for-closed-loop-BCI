@@ -99,7 +99,8 @@ def get_data(patient_id, datasets_add, dt, sampling_freq, file_name):
             neural_df['baseline_flag'][index_baselines] = itr
 
     ''' re-assign the phoneme ids'''
-    phones_code_dic = dict(zip(phones_df.phoneme.unique(), np.arange(phones_df.phoneme.nunique())))
+    phones_df_all = pd.read_csv(datasets_add + 'LM/phonemes_df.csv')
+    phones_code_dic = dict(zip(phones_df_all.phoneme.unique(), np.arange(phones_df_all.phoneme.nunique())))
     if 'NAN'  in phones_code_dic:
         pass
     else:

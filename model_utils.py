@@ -168,7 +168,7 @@ def get_state_transition_p_bigram(phones_code_dic, Biogram):
             pwtwt1[value,phones_code_dic[key_temp]]=value_temp
     return pwtwt1
 
-def get_language_components(total_data, N_gram):
+def get_language_components(total_data, N_gram,save_result_path,datasets_add):
 
 
     ''' Phoneme duration model'''
@@ -177,6 +177,8 @@ def get_language_components(total_data, N_gram):
     phoneme_duration_df['std'] = total_data.groupby(by=["phoneme_id"], dropna=False).std().phoneme_duration
 
     ''' re-assign the phoneme ids'''
+    # phones_df_all = pd.read_csv(datasets_add + 'LM/phonemes_df.csv')
+    # phones_code_dic = dict(zip(phones_df_all.phoneme.unique(), np.arange(phones_df_all.phoneme.nunique())))
     phones_code_dic = dict(zip(total_data.phoneme.unique(), np.arange(total_data.phoneme.nunique())))
 
     ''' phonemes N-gram model'''
@@ -187,7 +189,9 @@ def get_language_components(total_data, N_gram):
     pwtwt1 = get_state_transition_p_bigram(phones_code_dic, phones_NgramModel)
     plt.figure()
     plt.imshow(np.log(pwtwt1), cmap='RdBu')
+    plt.colorbar
     plt.xticks(ticks=np.arange(len(list(phones_code_dic.keys()))), labels=list(phones_code_dic.keys()), rotation =90)
     plt.yticks(ticks=np.arange(len(list(phones_code_dic.keys()))), labels=list(phones_code_dic.keys()), rotation=0)
-
+    plt.savefig(save_result_path + 'bio-gram-LM.png')
+    plt.savefig(save_result_path + 'bio-gram-LM.svg', format='svg')
     return pwtwt1, phoneme_duration_df, phones_NgramModel, phones_code_dic

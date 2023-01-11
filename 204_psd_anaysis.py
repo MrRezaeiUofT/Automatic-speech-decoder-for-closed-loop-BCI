@@ -16,7 +16,7 @@ number_trials = 80
 n_components = 2
 epsilon = 1e-5
 
-patient_id = 'DM1005'
+patient_id = 'DM1012'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 save_result_path = datasets_add + patient_id + '/Results/' +'phonems_psd/'
@@ -165,27 +165,51 @@ indx_ch_arr = chn_df.index
 indx_ph_arr = np.arange(corr.shape[0])
 # indx_ph_arr = np.array([0, 3, 5,6,7,10,11,12,14,15,17,18,19,21,23, 24,26,27,28,29,31,35, 36, 38, 1, 2,4,8,9,13,16,20,22,25,30,32,33,34,37,39]) # vows and con
 # indx_ph_arr = np.array([11, 35, 21, 24, 27, 18, 17, 10, 5, 19, 3, 14, 31,6, 29, 12, 23, 26, 28, 22, 39, 4, 16, 2, 8, 9, 36, 34, 33, 30, 20, 1, 38]) # Edward cheng
-plt.figure(figsize=(28,14))
+plt.figure(figsize=(20,10))
 rearranged_cov = corr[:,indx_ch_arr]
 rearranged_cov = rearranged_cov[indx_ph_arr,:]
 sns.heatmap((rearranged_cov[:,:,0]), annot=False, cmap='Blues')
 labels_ytick = np.array(list(phones_code_dic.keys()))[indx_ph_arr]
 labels_xtick = chn_df.HCPMMP1_label_1.to_list()
-plt.title('Encoding-mean-patient'+patient_id)
+plt.title('Pred-mean-patient'+patient_id)
 plt.yticks(ticks=np.arange(len(labels_ytick)), labels=labels_ytick, rotation=0)
 plt.xticks(ticks=np.arange(len(labels_xtick)), labels=np.array(labels_xtick), rotation=90)
 plt.savefig(save_result_path+'predic-phonemes-mean.png')
+plt.savefig(save_result_path+'predic-phonemes-mean.svg',  format='svg')
 
-plt.figure(figsize=(28,14))
+plt.figure(figsize=(20,10))
 sns.heatmap((rearranged_cov[:,:,1]), annot=False, cmap='Blues')
-plt.title('Encoding-max-patient'+patient_id)
+plt.title('Pred-max-patient'+patient_id)
 plt.yticks(ticks=np.arange(len(labels_ytick)), labels=labels_ytick, rotation=0)
 plt.xticks(ticks=np.arange(len(labels_xtick)), labels=np.array(labels_xtick), rotation=90)
 plt.savefig(save_result_path+'predic-phonemes-max.png')
+plt.savefig(save_result_path+'predic-phonemes-max.svg',  format='svg')
 
-plt.figure(figsize=(28,14))
-sns.heatmap((rearranged_cov[:,:,2]), annot=False, cmap='Blues')
+plt.figure(figsize=(20,10))
+sns.heatmap((rearranged_cov[:,:,2]/rearranged_cov[:,:,2].max()), annot=False, cmap='Blues')
 plt.title('Encoding-max-patient'+patient_id)
 plt.yticks(ticks=np.arange(len(labels_ytick)), labels=labels_ytick, rotation=0)
 plt.xticks(ticks=np.arange(len(labels_xtick)), labels=np.array(labels_xtick), rotation=90)
 plt.savefig(save_result_path+'max_encoding_weight.png')
+plt.savefig(save_result_path+'max_encoding_weight.svg',  format='svg')
+''' Summerized Maximum Encoding'''
+data_arr = rearranged_cov[:,:,2]/rearranged_cov[:,:,2].max()
+summ_df = pd.DataFrame(data_arr, columns=labels_xtick)
+summ_df['phonemes'] = labels_ytick
+summ_df_melt = pd.melt(summ_df,id_vars=['phonemes'])
+labels_xtick_summary = summ_df_melt[summ_df_melt['phonemes']==labels_ytick[0]].groupby(['variable']).max().index.to_list()
+summary_data = np.zeros((len(labels_ytick), len(labels_xtick_summary)))
+qq = 0
+for phone_ii in labels_ytick:
+    summ_df_melt_gb= summ_df_melt[summ_df_melt['phonemes']==phone_ii].groupby(['variable']).max()
+    summary_data[qq,:] = summ_df_melt_gb.value.to_numpy()
+
+    qq+=1
+
+plt.figure(figsize=(8,10))
+sns.heatmap(summary_data, annot=False, cmap='Blues')
+plt.title('Encoding-max-patient-summary'+patient_id)
+plt.yticks(ticks=np.arange(len(labels_ytick)), labels=labels_ytick, rotation=0)
+plt.xticks(ticks=np.arange(len(labels_xtick_summary)), labels=np.array(labels_xtick_summary), rotation=90)
+plt.savefig(save_result_path+'max_encoding_weight_summary.png')
+plt.savefig(save_result_path+'max_encoding_weight_summary.svg',  format='svg')
