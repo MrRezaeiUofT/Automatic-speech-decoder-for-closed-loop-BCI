@@ -3,7 +3,8 @@ import json
 
 patient_ids = ['DM1005', 'DM1007', 'DM1008', 'DM1012', 'DM1013']
 datasets_add = './Datasets/'
-
+phonemes_dict_df = pd.read_csv(datasets_add + 'LM/phonemes_df_harvard_dataset_phonemes_dic.csv')
+phones_code_dic = dict(zip(phonemes_dict_df['phonemes'].to_list(),phonemes_dict_df['ids'].to_list()))
 pp =0
 for patient_id in patient_ids:
 
@@ -23,7 +24,8 @@ for patient_id in patient_ids:
 
     pp +=1
 
-phones_code_dic = dict(zip(phones_df.phoneme.unique(), np.arange(phones_df.phoneme.nunique())))
+phones_df['phoneme_id'] = 0
+phones_df['phoneme_id'] = phones_df['phoneme'].apply(lambda x: phones_code_dic[x])
 
 
-phones_df.to_csv(datasets_add+'LM/phonemes_df.csv')
+phones_df.to_csv(datasets_add+'LM/our_phonemes_df.csv')

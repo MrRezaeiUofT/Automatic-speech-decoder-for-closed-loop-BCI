@@ -180,7 +180,7 @@ def get_language_components(total_data, N_gram,save_result_path,datasets_add):
     # phones_df_all = pd.read_csv(datasets_add + 'LM/phonemes_df.csv')
     # phones_code_dic = dict(zip(phones_df_all.phoneme.unique(), np.arange(phones_df_all.phoneme.nunique())))
     phones_code_dic = dict(zip(total_data.phoneme.unique(), np.arange(total_data.phoneme.nunique())))
-
+    phones_code_dic = dict(sorted(phones_code_dic.items(), key=lambda x: x[1]))
     ''' phonemes N-gram model'''
 
     phones_NgramModel = NgramModel(N_gram)

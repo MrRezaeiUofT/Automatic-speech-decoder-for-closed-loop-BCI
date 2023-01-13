@@ -10,17 +10,12 @@ import pickle
 from mingpt.model import GPT
 ############# our phoneme dataset from 191xxx #######################
 datasets_add = './Datasets/'
-phones_df_all = pd.read_csv(datasets_add+'LM/phonemes_df.csv')
+phones_df_all = pd.read_csv(datasets_add+'LM/our_phonemes_df.csv') ## for our dataset
+phones_df_all = pd.read_csv(datasets_add+'LM/phonemes_df_harvard_dataset.csv') ## for harvard dataset
+phonemes_dict_df = pd.read_csv(datasets_add + 'LM/phonemes_df_harvard_dataset_phonemes_dic.csv')
+phones_code_dic = dict(zip(phonemes_dict_df['phonemes'].to_list(),phonemes_dict_df['ids'].to_list()))
 
-phones_code_dic = dict(zip(phones_df_all.phoneme.unique(), np.arange(phones_df_all.phoneme.nunique())))
-if 'NAN' in phones_code_dic:
-    pass
-else:
-    phones_code_dic.update({'NAN': len(phones_df_all.phoneme.unique())})
-# if phones_df['phoneme'].isin(['nan']):
-#     phones_df[phones_df['phoneme'] == 'nan']['phoneme']= 'NAN'
-phones_df_all['phoneme_id'] = 0
-phones_df_all['phoneme_id'] = phones_df_all['phoneme'].apply(lambda x: phones_code_dic[x])
+
 phones_df_all['ph_temp'] = 1
 max_sentence_L= phones_df_all.groupby(['trial_id']).sum().ph_temp.max()
 dataset = np.zeros((phones_df_all.trial_id.max(), max_sentence_L)).astype('int')
