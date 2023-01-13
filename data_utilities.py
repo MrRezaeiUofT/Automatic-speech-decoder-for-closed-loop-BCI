@@ -4,6 +4,9 @@ import numpy as np
 import pandas as pd
 import scipy
 from patsy import dmatrix, build_design_matrices
+import torch
+from torch.utils.data import Dataset
+from torch.utils.data.dataloader import DataLoader
 import scipy.interpolate as intrp
 
 def get_data(patient_id, datasets_add, dt, sampling_freq, file_name):
@@ -183,3 +186,59 @@ def bspline_window(config_LSSM_MPP):
     # plt.title('b-spline windows')
 
     return y
+
+def get_phonems_data(datasets_add,
+                     phonemes_add= 'LM/our_phonemes_df.csv',
+                     dict_add = 'LM/phonemes_df_harvard_dataset_phonemes_dic.csv'):
+    '''
+    get convert the phonemes sequence to a matrix representations and prepare it for language model training
+    :param datasets_add:
+    :param phonemes_add:
+    :param dict_add:
+    :return:
+    '''
+    phones_df_all = pd.read_csv(datasets_add + phonemes_add)
+    phonemes_dict_df = pd.read_csv(datasets_add + dict_add)
+    phones_code_dic = dict(zip(phonemes_dict_df['phonemes'].to_list(), phonemes_dict_df['ids'].to_list()))
+
+    phones_df_all['ph_temp'] = 1  # just for finding maximum length for sentences
+    max_sentence_L = phones_df_all.groupby(['trial_id']).sum().ph_temp.max()
+    dataset = np.zeros((phones_df_all.trial_id.max(), max_sentence_L)).astype('int')
+    for ii in range(phones_df_all.trial_id.max()):
+        current_sent = phones_df_all[phones_df_all.trial_id == ii].phoneme_id.to_numpy().astype('int')
+        if max_sentence_L != len(current_sent):
+            dataset[ii, :] = np.concatenate(
+                [current_sent, (phones_code_dic['NAN'] * np.ones((max_sentence_L - len(current_sent),)))],
+                axis=0).astype('int')
+        else:
+            dataset[ii, :] = current_sent.astype('int')
+
+    data_in = dataset
+    data_out = np.concatenate([dataset, (phones_code_dic['NAN'] * np.ones((dataset.shape[0], 1)))], axis=1)[:,
+               1:].astype('int')
+    vocab_size = len(phones_code_dic)
+    return [data_in, data_out,vocab_size]
+
+
+
+class prepare_phoneme_dataset(Dataset):
+    def __init__(self ,data_in,data_out, vocab_size):
+        self.data_in = torch.tensor(data_in, dtype=torch.int64)
+        self.data_out = torch.tensor(data_out, dtype=torch.int64)
+        self.sentence_length = data_out.shape[1]
+        self.data_length = data_out.shape[0]
+        self.vocab_size = vocab_size
+
+    def get_vocab_size(self):
+        return self.vocab_size
+
+    def get_block_size(self):
+        # the length of the sequence that will feed into transformer,
+        # containing concatenated input and the output, but -1 because
+        # the transformer starts making predictions at the last input element
+        return self.sentence_length
+    def __len__(self):
+        return len(self.data_in)
+
+    def __getitem__(self, index):
+        return [self.data_in[index], self.data_out[index]]
