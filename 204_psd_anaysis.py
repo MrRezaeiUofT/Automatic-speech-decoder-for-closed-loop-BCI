@@ -1,6 +1,5 @@
 from data_utilities import *
 import torch
-from deep_models import get_trial_data
 import pickle
 from sklearn.preprocessing import StandardScaler
 from sklearn.manifold import TSNE
@@ -16,30 +15,32 @@ number_trials = 80
 n_components = 2
 epsilon = 1e-5
 
-patient_id = 'DM1012'
+patient_id = 'DM1013'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 save_result_path = datasets_add + patient_id + '/Results/' +'phonems_psd/'
-trials_df=pd.read_csv(
+trials_info_df=pd.read_csv(
         datasets_add + patient_id + '/' + 'sub-' + patient_id + '_ses-intraop_task-lombard_annot-produced-sentences.tsv',
         sep='\t')
-trials =trials_df.trial_id.to_numpy()
+trials_id =trials_info_df.trial_id.to_numpy()
 ''' get language model'''
 with open(data_add+'language_model_data.pkl', 'rb') as openfile:
     # Reading from json file
     language_data = pickle.load(openfile)
 pwtwt1, phoneme_duration_df, phones_NgramModel, phones_code_dic, count_phonemes = language_data
-keys= list(phones_code_dic.keys())
-sp_id = phones_code_dic['SP']
-if 'NAN' in phones_code_dic:
-    pass
-else:
-    phones_code_dic.update({'NAN': len(phones_code_dic)})
-nan_id = phones_code_dic['NAN']
+
+''' Exclude the NAN and SP from the phonemes dataset'''
+# keys= list(phones_code_dic.keys())
+# sp_id = phones_code_dic['SP']
+# if 'NAN' in phones_code_dic:
+#     pass
+# else:
+#     phones_code_dic.update({'NAN': len(phones_code_dic)})
+# nan_id = phones_code_dic['NAN']
 
 
 ''' gather all features for the phonemes'''
-for trial in trials:
+for trial in trials_id:
     if trial == 1:
         XDesign_total, y_tr_total = get_trial_data(data_add, trial, h_k, f_k, phones_code_dic, tensor_enable=False)
         phonemes_id_total = np.argmax(y_tr_total, axis=-1).reshape([-1,1])
@@ -102,19 +103,19 @@ for trial in trials:
 #         axes[ii, jj].set_ylabel('pc2')
 # plt.savefig(save_result_path+'tsne-phonemes.png')
 ''' re assign phonemes id with deleting 'NAN' and 'sp' '''
-for ii in range(len(keys)):
-    if (ii< sp_id) and (ii< nan_id):
-        pass
-    elif (ii< sp_id) and (ii> nan_id):
-        phones_code_dic[keys[ii]] -=1
-    elif (ii > sp_id) and (ii < nan_id):
-        phones_code_dic[keys[ii]] -= 1
-    elif (ii > sp_id) and (ii > nan_id):
-        phones_code_dic[keys[ii]] -= 2
-    elif (ii == sp_id):
-        del phones_code_dic[keys[ii]]
-    elif  (ii == nan_id):
-        del phones_code_dic[keys[ii]]
+# for ii in range(len(keys)):
+#     if (ii< sp_id) and (ii< nan_id):
+#         pass
+#     elif (ii< sp_id) and (ii> nan_id):
+#         phones_code_dic[keys[ii]] -=1
+#     elif (ii > sp_id) and (ii < nan_id):
+#         phones_code_dic[keys[ii]] -= 1
+#     elif (ii > sp_id) and (ii > nan_id):
+#         phones_code_dic[keys[ii]] -= 2
+#     elif (ii == sp_id):
+#         del phones_code_dic[keys[ii]]
+#     elif  (ii == nan_id):
+#         del phones_code_dic[keys[ii]]
 # pwtwt1_new = np.delete(pwtwt1, (sp_id), axis=0)
 # pwtwt1_new = np.delete(pwtwt1_new, (nan_id), axis=0)
 # pwtwt1_new = np.delete(pwtwt1_new, (sp_id), axis=1)
@@ -127,12 +128,12 @@ config_bs = {
     }
 bsp_w = bspline_window(config_bs)
 ''' simple classification'''
-number_comp = 7
+number_comp_pca = 7
 input_type= 'spline'
 features= [-1] # high-gamma=-1, low-gamma =-3, med-gamma=-2
 X = XDesign_total[:,:,features,:] ##
 y_onehot=  y_tr_total
-corr = np.zeros((y_onehot.shape[1]-2,X.shape[-1],3))
+corr = np.zeros((y_onehot.shape[1],X.shape[-1],3))
 # count_phonemes = np.delete(count_phonemes,[sp_id,nan_id])
 for jj in range(corr.shape[1]):
     print(jj)
@@ -142,20 +143,20 @@ for jj in range(corr.shape[1]):
         inputs = np.swapaxes(X, 1, -1)[:,jj,:,:].dot(bsp_w).reshape([X.shape[0], -1])
     elif input_type == 'kernel_pca':
         temp = X[:, :, :, jj].squeeze().reshape([X.shape[0], -1])
-        Kernel_pca = KernelPCA(n_components=number_comp, kernel="rbf")
+        Kernel_pca = KernelPCA(n_components=number_comp_pca, kernel="rbf")
         inputs = Kernel_pca.fit_transform(temp)
 
     outputs = np.argmax(y_onehot, axis=1)
-    weights = 1/(count_phonemes[outputs]+1)
-    weights /=weights.max()
+    # weights = 1/(count_phonemes[outputs]+1)
+    # weights /=weights.max()
     clf = LogisticRegression(penalty = 'l2', solver='liblinear',class_weight='balanced', random_state=0).fit(inputs, outputs)
     y_hat = clf.predict_proba(inputs)
     # GLM_model = sm.GLM(y_onehot, inputs, family=sm.families.)
     # GLM_model_results = GLM_model.fit_regularized(L1_wt=1, refit=False)
     # y_hat = GLM_model.predict(GLM_model_results.params, inputs)
-    corr[:,jj,0] = np.mean(y_hat,axis=0)
-    corr[:, jj,1] = np.max(y_hat, axis=0)
-    corr[:, jj, 2] = np.max(np.abs(clf.coef_), axis=1).squeeze()
+    corr[np.unique(outputs),jj,0] = np.mean(y_hat,axis=0)
+    corr[np.unique(outputs), jj,1] = np.max(y_hat, axis=0)
+    corr[np.unique(outputs), jj, 2] = np.max(np.abs(clf.coef_), axis=1).squeeze()
 
 ''' sort LFP channels'''
 chn_df = pd.read_csv( datasets_add + patient_id + '/sub-'+patient_id+'_electrodes.tsv', sep='\t')

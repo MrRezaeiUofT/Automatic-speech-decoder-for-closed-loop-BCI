@@ -23,7 +23,7 @@ from mingpt.trainer import Trainer
 
 train_config = Trainer.get_default_config()
 train_config.learning_rate = 5e-4 # the model we're using is so small that we can go a bit faster
-train_config.max_iters = 2000
+train_config.max_iters = 20
 train_config.num_workers = 0
 trainer = Trainer(train_config, model, train_dataset)
 
@@ -35,14 +35,14 @@ trainer.set_callback('on_batch_end', batch_end_callback)
 trainer.run()
 # now let's perform some evaluation
 model.eval()
-num_samples = 1
+num_samples = 3
 steps=10
 do_sample = True
 input_length= 10
 for ii in np.random.randint(0,train_dataset.data_length,10):
     x = torch.tensor(train_dataset[ii][0][:input_length], dtype=torch.long).to(trainer.device)
     x = x.expand(num_samples, -1)
-    y = model.generate(x, max_new_tokens=steps, do_sample=do_sample, top_k=40)
+    y, probs = model.generate(x, max_new_tokens=steps, do_sample=do_sample, top_k=40)
     print('-' * 80)
     print('predicted:')
     print(y)

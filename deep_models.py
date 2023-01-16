@@ -7,45 +7,6 @@ from sklearn.preprocessing import StandardScaler
 import pickle
 from torch.autograd import Variable
 
-def get_trial_data(data_add,trial, h_k,f_k, phones_code_dic, tensor_enable):
-    '''
-    get a batch of data and [re[are it for the model
-    :param data_add: data address
-    :param trial: trial id
-    :param h_k: length of history
-    :return:
-    '''
-    file_name = data_add + 'trials/trial_' + str(trial) + '.pkl'
-    with open(file_name, "rb") as open_file:
-        data_list_trial = pickle.load(open_file)
-    data_list_trial[1] =data_list_trial[1].reset_index()
-    X_tr = np.swapaxes(data_list_trial[0], 2, 0)
-    if tensor_enable:
-        X_tr = X_tr.reshape([X_tr.shape[0], -1])
-        # X_tr-=X_tr.mean(axis=0)
-        # X_tr /= (X_tr.std(axis=0))
-        XDesign = calDesignMatrix_V2(X_tr, h_k + 1)
-    else:
-        # X_tr -= X_tr.mean(axis=0)
-        # X_tr /= ( X_tr.std(axis=0))
-        XDesign = calDesignMatrix_V4(X_tr, h_k + 1, f_k)
-
-
-    y_tr = data_list_trial[1][data_list_trial[1].columns[data_list_trial[1].columns.str.contains("id_onehot")]].to_numpy()
-
-
-    ''' delete 'sp' and 'NaN'  and non-onset_phonemes from dataset'''
-    sp_index = np.where(np.argmax(y_tr, axis=1) == phones_code_dic['SP'])[0]
-    nan_index = np.where(np.argmax(y_tr, axis=1) == phones_code_dic['NAN'])[0]
-    non_phoneme_onset = data_list_trial[1][data_list_trial[1].phoneme_onset == 0].index.to_numpy()
-    delet_phonemes_indx = np.unique(np.concatenate([nan_index, sp_index, non_phoneme_onset],axis=0))
-
-    XDesign = np.delete(XDesign, delet_phonemes_indx, 0)
-    y_tr = np.delete(y_tr, delet_phonemes_indx, 0)
-    if tensor_enable:
-        return torch.tensor(XDesign, dtype=torch.float32), torch.tensor(y_tr, dtype=torch.float32)
-    else:
-        return XDesign, y_tr
 
 class SimpleClassifier(nn.Module):
     """

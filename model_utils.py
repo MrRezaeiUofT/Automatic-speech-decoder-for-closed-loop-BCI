@@ -120,52 +120,55 @@ class NgramModel(object):
             map_to_probs[token] = self.prob(context, token)
         return map_to_probs
 
-    def random_token(self, context):
-        """
-        Given a context we "semi-randomly" select the next word to append in a sequence
-        :param context:
-        :return:
-        """
-        r = random.random()
-        map_to_probs = {}
-        token_of_interest = self.context[context]
-        for token in token_of_interest:
-            map_to_probs[token] = self.prob(context, token)
+    # def random_token(self, context):
+    #     """
+    #     Given a context we "semi-randomly" select the next word to append in a sequence
+    #     :param context:
+    #     :return:
+    #     """
+    #     r = random.random()
+    #     map_to_probs = {}
+    #     token_of_interest = self.context[context]
+    #     for token in token_of_interest:
+    #         map_to_probs[token] = self.prob(context, token)
+    #
+    #     summ = 0
+    #     for token in sorted(map_to_probs):
+    #         summ += map_to_probs[token]
+    #         if summ > r:
+    #             return token
+    #
+    # def generate_text(self, token_count: int):
+    #     """
+    #     :param token_count: number of words to be produced
+    #     :return: generated text
+    #     """
+    #     n = self.n
+    #     context_queue = (n - 1) * ['<START>']
+    #     result = []
+    #     for _ in range(token_count):
+    #         obj = self.random_token(tuple(context_queue))
+    #         result.append(obj)
+    #         if n > 1:
+    #             context_queue.pop(0)
+    #             if obj == '.':
+    #                 context_queue = (n - 1) * ['<START>']
+    #             else:
+    #                 context_queue.append(obj)
+    #     return ' '.join(result)
 
-        summ = 0
-        for token in sorted(map_to_probs):
-            summ += map_to_probs[token]
-            if summ > r:
-                return token
 
-    def generate_text(self, token_count: int):
-        """
-        :param token_count: number of words to be produced
-        :return: generated text
-        """
-        n = self.n
-        context_queue = (n - 1) * ['<START>']
-        result = []
-        for _ in range(token_count):
-            obj = self.random_token(tuple(context_queue))
-            result.append(obj)
-            if n > 1:
-                context_queue.pop(0)
-                if obj == '.':
-                    context_queue = (n - 1) * ['<START>']
-                else:
-                    context_queue.append(obj)
-        return ' '.join(result)
-
-
-def get_state_transition_p_bigram(phones_code_dic, Biogram):
+def get_state_transition_p_bigram(phones_code_dic, phonemes_df, Biogram):
     pwtwt1=np.zeros((len(phones_code_dic),len(phones_code_dic)))
 
     for key,value in phones_code_dic.items():
         # print(key)
-        fu_dic=Biogram.map_to_probs((key,))
-        for key_temp, value_temp in fu_dic.items():
-            pwtwt1[value,phones_code_dic[key_temp]]=value_temp
+        if np.isin(key,phonemes_df.phoneme.unique()).sum() == 1:
+            fu_dic=Biogram.map_to_probs((key,))
+            for key_temp, value_temp in fu_dic.items():
+                pwtwt1[value,phones_code_dic[key_temp]]=value_temp
+            else:
+                pass
     return pwtwt1
 
 def get_language_components(total_data, N_gram,save_result_path,datasets_add):
@@ -179,14 +182,17 @@ def get_language_components(total_data, N_gram,save_result_path,datasets_add):
     ''' re-assign the phoneme ids'''
     # phones_df_all = pd.read_csv(datasets_add + 'LM/phonemes_df.csv')
     # phones_code_dic = dict(zip(phones_df_all.phoneme.unique(), np.arange(phones_df_all.phoneme.nunique())))
-    phones_code_dic = dict(zip(total_data.phoneme.unique(), np.arange(total_data.phoneme.nunique())))
+    # phones_code_dic = dict(zip(total_data.phoneme.unique(), np.arange(total_data.phoneme.nunique())))
+    # phones_code_dic = dict(sorted(phones_code_dic.items(), key=lambda x: x[1]))
+    phonemes_dict_df = pd.read_csv(datasets_add + 'LM/phonemes_df_harvard_dataset_phonemes_dic.csv')
+    phones_code_dic = dict(zip(phonemes_dict_df['phonemes'].to_list(), phonemes_dict_df['ids'].to_list()))
     phones_code_dic = dict(sorted(phones_code_dic.items(), key=lambda x: x[1]))
     ''' phonemes N-gram model'''
 
     phones_NgramModel = NgramModel(N_gram)
     phones_NgramModel.update(sentence=(total_data['phoneme'].to_list()), need_tokenize=False)
 
-    pwtwt1 = get_state_transition_p_bigram(phones_code_dic, phones_NgramModel)
+    pwtwt1 = get_state_transition_p_bigram(phones_code_dic, total_data, phones_NgramModel)
     plt.figure()
     plt.imshow(np.log(pwtwt1), cmap='RdBu')
     plt.colorbar

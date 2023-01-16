@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import torch.optim as optim
 import torch.nn as nn
 import torch
-from deep_models import SimpleClassifier, get_trial_data, RNN_Classifier, CNN_Classifier
+from deep_models import SimpleClassifier, RNN_Classifier, CNN_Classifier
 import pickle
 
 
