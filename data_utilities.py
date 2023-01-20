@@ -190,7 +190,7 @@ def bspline_window(config_LSSM_MPP):
     # for i in range(bsp_degree * 2):
     #     y_py[:, i] = intrp.BSpline(np.linspace(0, 1, 3 * bsp_degree + 1),
     #                                (np.arange(bsp_degree * 2) == i).astype(float), bsp_degree, extrapolate=False)(x)
-    y = dmatrix("bs(x, df=6, degree=3, include_intercept=True) - 1", {"x": x})
+    y = dmatrix("bs(x, df=40, degree=20, include_intercept=True) - 1", {"x": x})
         # y_py[:, i]/= y_py[:, i].max()
     # plt.figure()
     # plt.plot(y_py)

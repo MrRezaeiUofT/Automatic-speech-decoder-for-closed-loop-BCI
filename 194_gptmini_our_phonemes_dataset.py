@@ -23,7 +23,7 @@ from mingpt.trainer import Trainer
 
 train_config = Trainer.get_default_config()
 train_config.learning_rate = 5e-4 # the model we're using is so small that we can go a bit faster
-train_config.max_iters = 20
+train_config.max_iters = 2000
 train_config.num_workers = 0
 trainer = Trainer(train_config, model, train_dataset)
 

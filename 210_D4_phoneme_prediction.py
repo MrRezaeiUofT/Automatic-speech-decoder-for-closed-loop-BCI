@@ -20,13 +20,7 @@ with open(data_add+'language_model_data.pkl', 'rb') as openfile:
 
 ''' calculate the unbalanced weight for the classifier '''
 pwtwt1, phoneme_duration_df, phones_NgramModel, phones_code_dic, count_phonemes = language_data
-weight_phoneme= 1-(count_phonemes/count_phonemes.sum())
 
-
-''' delete 'sp' phoneme from the language model '''
-# indx_delete_phoneme = [phones_code_dic['sp'], phones_code_dic['NAN']]
-# pwtwt1[:,indx_delete_phoneme] =0
-# pwtwt1 [indx_delete_phoneme,:] =0
 
 
 ''' logistic regression model as discriminative model'''
@@ -50,13 +44,13 @@ output_size = data_list_trial[1][data_list_trial[1].columns[data_list_trial[1].c
 ''' CNN model'''
 
 model = CNN_Classifier()
-optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
-criterion = nn.CrossEntropyLoss(weight=torch.tensor(weight_phoneme))
+optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+criterion = nn.CrossEntropyLoss()
 
 
-LOSS_tr=[]
+LOSS_tr = []
 ACC_tr = []
-LOSS_te=[]
+LOSS_te = []
 ACC_te = []
 number_trials = 80
 trials_te = np.random.randint(1,number_trials,10)
@@ -86,17 +80,8 @@ for epochs in range(20):
         loss.backward()
         optimizer.step()
         y_hat = y_hat.detach().numpy()
-
-        # ''' filter by language model'''
-        # for ii in range(y_tr.shape[0]):
-        #     if ii == 0:
-        #         y_hat[ii, :]=y_hat[0, :]
-        #     else:
-        #         one_step_pred = pwtwt1.dot( y_hat[ii-1, :])
-        #         y_hat[ii,:]=(y_hat[ii]) *one_step_pred
-
         ''' calculate acc and loss'''
-        acc_total_tr+=100 * torch.sum(torch.argmax(torch.tensor(y_hat), dim=1) == torch.argmax(y_tr, dim=1)).item() / y_hat.shape[0]/len(trials_tr)
+        acc_total_tr += 100 * torch.sum(torch.argmax(torch.tensor(y_hat), dim=1) == torch.argmax(y_tr, dim=1)).item() / y_hat.shape[0]/len(trials_tr)
         loss_total_tr += loss.detach().numpy()/len(trials_tr)
         if pp == 0:
             y_hat_total = y_hat
@@ -115,7 +100,7 @@ for epochs in range(20):
 
     pp = 0
     for trial in trials_te:
-        XDesign, y_te = get_trial_data(data_add, trial, h_k,f_k,phones_code_dic, tensor_enable=False)
+        XDesign, y_te = get_trial_data(data_add, trial, h_k, f_k, phones_code_dic, tensor_enable=False)
         XDesign = np.swapaxes(XDesign, 1, 2)
         XDesign = torch.tensor(XDesign, dtype=torch.float32)
         y_te = torch.tensor(y_te, dtype=torch.float32)
@@ -124,14 +109,7 @@ for epochs in range(20):
         loss = criterion(y_hat, y_te)
         y_hat = y_hat.detach().numpy()
         ''' apply the language model'''
-        # for ii in range(y_te.shape[0]):
-        #     if ii == 0:
-        #         y_hat[ii, :]=y_hat[0, :]
-        #     else:
-        #
-        #         one_step_pred = pwtwt1.dot( y_hat[ii-1, :])
-        #         one_step_pred /= one_step_pred.sum()
-        #         y_hat[ii,:]=(y_hat[ii]) *one_step_pred
+
         ''' calculate acc and loss'''
         loss_total_te += loss.detach().numpy() / len(trials_te)
         acc_total_te += 100 * torch.sum(torch.argmax(torch.tensor(y_hat), dim=1) == torch.argmax(y_te, dim=1)).item() / y_hat.shape[
@@ -142,7 +120,7 @@ for epochs in range(20):
         else:
             y_hat_total = np.concatenate([y_hat_total, y_hat], axis=0)
             y_te_total = np.concatenate([y_te_total, y_te.detach().numpy()], axis=0)
-        pp +=1
+        pp += 1
     ''' gather acc and loss all trials'''
     cf_matrix_te = confusion_matrix(np.argmax(y_hat_total, axis=1),
                                     np.argmax(y_te_total, axis=1))

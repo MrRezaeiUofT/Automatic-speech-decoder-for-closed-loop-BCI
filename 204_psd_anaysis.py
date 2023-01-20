@@ -124,9 +124,9 @@ for trial in trials_id:
 ''' define baselines'''
 config_bs = {
         'decode_length': h_k+1+f_k,
-        'bsp_degree':10,
+        'bsp_degree':100,
     }
-bsp_w = bspline_window(config_bs)
+bsp_w = bspline_window(config_bs)[:,1:-1]
 ''' simple classification'''
 number_comp_pca = 7
 input_type= 'spline'
@@ -138,7 +138,7 @@ corr = np.zeros((y_onehot.shape[1],X.shape[-1],3))
 for jj in range(corr.shape[1]):
     print(jj)
     if input_type == 'simple':
-        inputs=X[:,:,:,jj].mean(axis =1).reshape([X.shape[0], -1])
+        inputs=X[:, :, :, jj].mean(axis =1).reshape([X.shape[0], -1])
     elif input_type == 'spline':
         inputs = np.swapaxes(X, 1, -1)[:,jj,:,:].dot(bsp_w).reshape([X.shape[0], -1])
     elif input_type == 'kernel_pca':

@@ -106,7 +106,6 @@ class CNN_Classifier(nn.Module):
             nn.Conv2d(in_channels=4, out_channels=20, kernel_size=10, stride=1, padding=1),
             nn.MaxPool2d(1, 5), nn.ReLU(inplace=True), nn.BatchNorm2d(20),
         )
-        self.fc1 = nn.Linear(320, 42)
 
 
 
