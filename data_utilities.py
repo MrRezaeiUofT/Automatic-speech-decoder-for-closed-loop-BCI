@@ -11,7 +11,7 @@ from torch.utils.data import Dataset
 from torch.utils.data.dataloader import DataLoader
 import scipy.interpolate as intrp
 
-def get_data(patient_id, datasets_add, dt, sampling_freq, file_name):
+def get_data(patient_id, datasets_add, dt, sampling_freq, file_name,denoised_neural=False):
     '''
     get the neural and phoneme information
     :param patient_id: patient ID
@@ -29,6 +29,12 @@ def get_data(patient_id, datasets_add, dt, sampling_freq, file_name):
     list_chn_df = list_chn_df.T[0].reset_index()
     neural_df = pd.DataFrame(np.transpose(mat['dataframe'])[:, :],
                              columns=list_chn_df[0].to_list())
+    '''group by over repeated indexes in denoised signal'''
+    # if denoised_neural:
+    #     neural_df = neural_df.groupby(by=["time"], as_index=False).mean().reset_index()
+    # else:
+    #     pass
+
     neural_df = neural_df.rename(columns={'feature-0': 'time'})
     phones_df = pd.read_csv(
         datasets_add + patient_id + '/' + 'sub-' + patient_id + '_ses-intraop_task-lombard_annot-produced-phonemes.tsv',
@@ -44,6 +50,7 @@ def get_data(patient_id, datasets_add, dt, sampling_freq, file_name):
         datasets_add + patient_id + '/' + 'sub-' + patient_id + '_ses-intraop_task-lombard_annot-trials.tsv', sep='\t')
     ''' upper case all phonems'''
     phones_df['phoneme'] = phones_df['phoneme'].str.upper()
+    phones_df.phoneme = apply_stress_remove([phones_df.phoneme.to_list()])[0]
     ''' Replace missing values with NAN'''
     phones_df['phoneme'] = phones_df['phoneme'].fillna('NAN')
     ''' drop nans in trial annotations'''
@@ -101,6 +108,7 @@ def get_data(patient_id, datasets_add, dt, sampling_freq, file_name):
             index_start_baseline = trials_df[trials_df.trial_id == itr-1].itg_onset.to_numpy()[0].astype('int')
             length_baseline = trials_df[trials_df.trial_id == itr-1].itg_duration.to_numpy()[0]
             index_baselines = np.arange(index_start_baseline, index_start_baseline+length_baseline)
+            index_baselines = np.intersect1d(index_baselines,neural_df.index.to_numpy())
             neural_df['baseline_flag'][index_baselines] = itr
 
     ''' re-assign the phoneme ids'''
@@ -108,12 +116,13 @@ def get_data(patient_id, datasets_add, dt, sampling_freq, file_name):
     # phones_code_dic = dict(zip(phones_df_all.phoneme.unique(), np.arange(phones_df_all.phoneme.nunique())))
     phonemes_dict_df = pd.read_csv(datasets_add + 'LM/phonemes_df_harvard_dataset_phonemes_dic.csv')
     phones_code_dic = dict(zip(phonemes_dict_df['phonemes'].to_list(), phonemes_dict_df['ids'].to_list()))
-    if 'NAN'  in phones_code_dic:
+    if 'NAN' in phones_code_dic:
         pass
     else:
         phones_code_dic.update({'NAN':len(phones_df.phoneme.unique()) })
     # if phones_df['phoneme'].isin(['nan']):
     #     phones_df[phones_df['phoneme'] == 'nan']['phoneme']= 'NAN'
+    phones_df.phoneme = phones_df.phoneme.replace('NA', 'NAN')
     phones_df['phoneme_id'] = 0
     phones_df['phoneme_id'] = phones_df['phoneme'].apply(lambda x: phones_code_dic[x])
     phones_df['phoneme_onset'] = 0
@@ -199,8 +208,10 @@ def bspline_window(config_LSSM_MPP):
     return y
 
 def get_phonems_data(datasets_add,
-                     phonemes_add= 'LM/our_phonemes_df.csv',
-                     dict_add = 'LM/phonemes_df_harvard_dataset_phonemes_dic.csv'):
+                    clustering_id,
+                    clustering =True,
+                    phonemes_add= 'LM/our_phonemes_df.csv',
+                    dict_add = 'LM/phonemes_df_harvard_dataset_phonemes_dic.csv'):
     '''
     get convert the phonemes sequence to a matrix representations and prepare it for language model training
     :param datasets_add:
@@ -210,13 +221,22 @@ def get_phonems_data(datasets_add,
     '''
     phones_df_all = pd.read_csv(datasets_add + phonemes_add)
     phonemes_dict_df = pd.read_csv(datasets_add + dict_add)
-    phones_code_dic = dict(zip(phonemes_dict_df['phonemes'].to_list(), phonemes_dict_df['ids'].to_list()))
+    if clustering:
+        clr = 'clustering_'+str(clustering_id)
+        phones_code_dic = dict(zip(phonemes_dict_df['phonemes'].to_list(), phonemes_dict_df[clr].to_list()))
+        reindexing_dic = dict(zip(phonemes_dict_df['ids'].to_list(), phonemes_dict_df[clr].to_list()))
+
+    else:
+        phones_code_dic = dict(zip(phonemes_dict_df['phonemes'].to_list(), phonemes_dict_df['ids'].to_list()))
 
     phones_df_all['ph_temp'] = 1  # just for finding maximum length for sentences
     max_sentence_L = phones_df_all.groupby(['trial_id']).sum().ph_temp.max()
     dataset = np.zeros((phones_df_all.trial_id.max(), max_sentence_L)).astype('int')
     for ii in range(phones_df_all.trial_id.max()):
         current_sent = phones_df_all[phones_df_all.trial_id == ii].phoneme_id.to_numpy().astype('int')
+        if len(current_sent) !=0:
+            if clustering:
+                current_sent = vec_translate(current_sent, reindexing_dic)
         if max_sentence_L != len(current_sent):
             dataset[ii, :] = np.concatenate(
                 [current_sent, (phones_code_dic['NAN'] * np.ones((max_sentence_L - len(current_sent),)))],
@@ -303,3 +323,19 @@ def get_trial_data(data_add,trial, h_k,f_k, phones_code_dic, tensor_enable, del_
             return torch.tensor(XDesign, dtype=torch.float32), torch.tensor(y_tr, dtype=torch.float32)
         else:
             return XDesign, y_tr
+
+
+def apply_stress_remove(input_list):
+    output_list = []
+    if len(input_list) !=0:
+        for item in input_list[0]:
+            # print(item)
+            output_list.append(item[:2])
+    else:
+        pass
+
+    return [output_list]
+
+
+def vec_translate(a, my_dict):
+   return np.vectorize(my_dict.__getitem__)(a)

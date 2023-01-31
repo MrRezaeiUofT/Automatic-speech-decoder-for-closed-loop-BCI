@@ -9,7 +9,7 @@ from deep_models import SimpleClassifier, RNN_Classifier, CNN_Classifier
 import pickle
 
 
-patient_id = 'DM1008'
+patient_id = 'DM1013'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 ''' get language model'''

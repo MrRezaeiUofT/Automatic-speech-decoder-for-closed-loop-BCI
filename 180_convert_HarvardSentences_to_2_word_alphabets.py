@@ -13,7 +13,7 @@ for sent_id in range(dataset_df.shape[0]):
     sentence_arpabet_list = []
     sentence_words_list = dataset_df.Sentence[sent_id].split()
     for word in sentence_words_list:
-        sentence_arpabet_list.append(cmudict_dic[word])
+        sentence_arpabet_list.append(apply_stress_remove(cmudict_dic[word]))
     flat_sentence_arpabet_list = [item for sublist in sentence_arpabet_list for item in sublist]
     flat_sentence_arpabet_list = [item for sublist in flat_sentence_arpabet_list for item in sublist]
     if sent_id == 0:

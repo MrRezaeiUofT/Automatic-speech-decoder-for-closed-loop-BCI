@@ -1,14 +1,14 @@
 from data_utilities import *
 from neural_utils import *
 
-patient_id = 'DM1013'
+patient_id = 'DM1008'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 # Opening JSON file
 with open(data_add + "dataset_info.json", 'r') as openfile:
     # Reading from json file
     dataset_info = json.load(openfile)
-total_data = pd.read_csv(datasets_add + patient_id + '/' + 'Preprocessed_data/' + 'prepro_phoneme_neural_total_v1.csv')
+total_data = pd.read_csv(datasets_add + patient_id + '/' + 'Preprocessed_data/' + 'prepro_phoneme_neural_total_v1_raw.csv')
 
 # '''  remove rows with 'sp' phonemes '''
 # total_data =total_data.drop(total_data[total_data.phoneme == 'sp'].index)

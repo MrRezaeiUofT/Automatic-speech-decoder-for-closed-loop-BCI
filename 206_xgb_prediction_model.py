@@ -27,7 +27,7 @@ config_bs = {
         'bsp_degree':100,
     }
 kernel_pca_comp = 10
-patient_id = 'DM1005'
+patient_id = 'DM1012'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 save_result_path = datasets_add + patient_id + '/Results/' +'phonems_psd/'
@@ -57,12 +57,14 @@ for trial in trials_id:
         phonemes_id_total = np.concatenate([phonemes_id_total, phonemes_id], axis=0)
         y_tr_total = np.concatenate([y_tr_total, y_tr], axis=0)
 
-X =  np.swapaxes(XDesign_total, -3, -1).squeeze() ##
-y_onehot=  y_tr_total
+X = np.swapaxes(XDesign_total, -3, -1).squeeze() ##
+y_onehot = y_tr_total
 
 '''dimensional reduction for features '''
+X = np.nan_to_num(X)
 bsp_w = bspline_window(config_bs)[:,1:-1]
 X=X.dot(bsp_w).reshape([X.shape[0], -1])
+
 Kernel_pca = KernelPCA(n_components=kernel_pca_comp, kernel="rbf")
 X = Kernel_pca.fit_transform(X)
 y = np.argmax(y_onehot,axis=-1)
@@ -88,27 +90,30 @@ xgb_classifier.fit(X_train,y_train)
 xgb_classifier.fit(X_train,y_train)
 predictions_xgb = xgb_classifier.predict(X_test)
 predic_probs_xgb = xgb_classifier.predict_proba(X_test)
+predictions_xgb_train = xgb_classifier.predict(X_train)
 
-
-''' convert back the indexes to general indexing for all datasets '''
-predictions_xgb_convert_back= np.zeros((predictions_xgb.shape[0],y_onehot.shape[1] )).astype('int')
-predic_probs_xgb_convert_back= np.zeros_like(predictions_xgb_convert_back)
-predic_probs_xgb_convert_back[:,unique_vals_y] = predic_probs_xgb
-for count, value in enumerate(unique_vals_y):
-    predictions_xgb_convert_back[np.where(predictions_xgb == count),value] = 1
 
 ''' visualize xgboost result test'''
+indx_ph_arr = np.array([37, 1, 6, 4, 9, 18, 28, 24, 15, 33, 22, 11, 29, 31, 35, 34, 27, 20, 8, 36, 21, 3, 17, 32, 2, 23,
+                        7, 5, 10, 19, 25, 26, 30, 13, 0, 14]) # Shenoy ppr
+uniques_te = np.array(np.unique(np.concatenate([predictions_xgb,y_test], axis=0)))
+indx_ph_arr_te =indx_ph_arr[indx_ph_arr<uniques_te.max()]
 conf_matrix_test = confusion_matrix(y_test, predictions_xgb)
-disp=ConfusionMatrixDisplay(conf_matrix_test, display_labels=np.array(list(phones_code_dic.keys()))[np.unique(np.concatenate([predictions_xgb,y_test], axis=0))])
+conf_matrix_test = conf_matrix_test[indx_ph_arr_te, :]
+conf_matrix_test = conf_matrix_test[:,  indx_ph_arr_te]
+disp=ConfusionMatrixDisplay(conf_matrix_test, display_labels=np.array(list(phones_code_dic.keys()))[indx_ph_arr_te])
 disp.plot()
 plt.title('test_result XGboost, acc='+str(100*accuracy_score(y_test, predictions_xgb))+'%')
 plt.savefig(save_result_path+'test_result_XG_boost.png')
 plt.savefig(save_result_path+'test_result_XG_boos.svg',  format='svg')
 print("Test-Accuracy of XG-boost Model::",accuracy_score(y_test, predictions_xgb))
 
-predictions_xgb_train = xgb_classifier.predict(X_train)
+uniques_tr = np.unique(np.concatenate([y_train,predictions_xgb_train], axis=0))
+indx_ph_arr_tr = indx_ph_arr[indx_ph_arr<uniques_tr.max()]
 conf_matrix_train = confusion_matrix(y_train,predictions_xgb_train )
-disp=ConfusionMatrixDisplay(conf_matrix_train, display_labels=np.array(list(phones_code_dic.keys()))[np.unique(np.concatenate([y_train,predictions_xgb_train], axis=0))])
+conf_matrix_train = conf_matrix_train[indx_ph_arr_tr, :]
+conf_matrix_train = conf_matrix_train[:, indx_ph_arr_tr]
+disp=ConfusionMatrixDisplay(conf_matrix_train, display_labels=np.array(list(phones_code_dic.keys()))[indx_ph_arr_tr])
 disp.plot()
 plt.title('train_result XGboost, acc='+str(100*accuracy_score(y_train, predictions_xgb_train))+'%')
 plt.savefig(save_result_path+'train_result_XG_boost.png')

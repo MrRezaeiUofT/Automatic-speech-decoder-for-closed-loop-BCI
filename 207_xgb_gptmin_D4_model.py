@@ -1,19 +1,8 @@
-from data_utilities import *
-import torch
-import pickle
-from sklearn.preprocessing import StandardScaler
-from sklearn.manifold import TSNE
-import seaborn as sns
-from sklearn.linear_model import LogisticRegression
-import statsmodels.api as sm
-import matplotlib.pyplot as plt
+
 from sklearn.decomposition import KernelPCA
-import torch
-from torch import nn
 from sklearn.metrics import ConfusionMatrixDisplay
 import xgboost as xgb
 from sklearn.model_selection import train_test_split
-from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import confusion_matrix
 from data_utilities import *
@@ -22,31 +11,36 @@ from mingpt.utils import set_seed
 set_seed(3407)
 from mingpt.model import GPT
 ''' constants'''
-h_k = 120
-f_k=25
-n_components = 2
+h_k = 100
+f_k=50
+count_phoneme_thr = 50
 epsilon = 1e-5
 config_bs = {
         'decode_length': h_k+1+f_k,
         'bsp_degree':100,
     }
 kernel_pca_comp = 10
-patient_id = 'DM1005'
+patient_id = 'DM1008'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 save_result_path = datasets_add + patient_id + '/Results/' +'phonems_psd/'
-
-
+phonemes_dic_address = 'LM/phonemes_df_harvard_dataset_phonemes_dic.csv'
+phonemes_dataset_address = 'LM/our_phonemes_df.csv'
+clustering_phonemes = True
+clustering_phonemes_id = 1
+num_samples_langmodel = 30
+do_sample_langmodel = True
 ####################################### Get Neural Data ################################################################
 trials_info_df=pd.read_csv(
         datasets_add + patient_id + '/' + 'sub-' + patient_id + '_ses-intraop_task-lombard_annot-produced-sentences.tsv',
         sep='\t')
 trials_id =trials_info_df.trial_id.to_numpy()
-
-with open(data_add+'language_model_data.pkl', 'rb') as openfile:
-    # Reading from json file
-    language_data = pickle.load(openfile)
-pwtwt1, phoneme_duration_df, phones_NgramModel, phones_code_dic, count_phonemes = language_data
+phonemes_dict_df = pd.read_csv(datasets_add + phonemes_dic_address)
+if clustering_phonemes:
+    clr = 'clustering_' + str(clustering_phonemes_id)
+    phones_code_dic = dict(zip(phonemes_dict_df['phonemes'].to_list(), phonemes_dict_df[clr].to_list()))
+else:
+    phones_code_dic = dict(zip(phonemes_dict_df['phonemes'].to_list(), phonemes_dict_df['ids'].to_list()))
 
 ''' gather all features for the phonemes and generate the dataset'''
 for trial in trials_id:
@@ -64,15 +58,34 @@ for trial in trials_id:
         first_y_tri = np.concatenate([first_y_tri,y_tri[0].reshape([1,-1])], axis=0)
         y_tri_total = np.concatenate([y_tri_total, y_tri], axis=0)
 
-X = np.swapaxes(XDesign_total, -3, -1).squeeze() ##
+X = np.swapaxes(XDesign_total, -3, -1).squeeze() [:,:,-1,:]##
 y_onehot=  y_tri_total
 ######################################## Prediction Process ############################################################
 '''dimensional reduction for features '''
+X = np.nan_to_num(X)
 bsp_w = bspline_window(config_bs)[:,1:-1]
 X=X.dot(bsp_w).reshape([X.shape[0], -1])
 Kernel_pca = KernelPCA(n_components=kernel_pca_comp, kernel="rbf")
 X = Kernel_pca.fit_transform(X)
 y_true = np.argmax(y_onehot,axis=-1)
+''' clustering the neural features indexes according to phonemes clusters  '''
+if clustering_phonemes:
+    clr = 'clustering_' + str(clustering_phonemes_id)
+    reindexing_dic = dict(zip(phonemes_dict_df['ids'].to_list(), phonemes_dict_df[clr].to_list()))
+    y_true = vec_translate(y_true, reindexing_dic)
+else:
+    pass
+''' delete infrequent phonemes'''
+uniques_y_true, counts_y_true = np.unique(y_true, return_counts=True)
+phoneme_id_to_delete = uniques_y_true[np.where(counts_y_true<count_phoneme_thr)[0]]
+for ii_di in range(len(phoneme_id_to_delete)):
+    if ii_di == 0:
+        index_to_delete = np.where(y_true == phoneme_id_to_delete[ii_di])[0]
+    else:
+        index_to_delete = np.concatenate([index_to_delete, np.where(y_true == phoneme_id_to_delete[ii_di])[0]], axis=0)
+y_true = np.delete(y_true,index_to_delete, axis=0)
+X =  np.delete(X,index_to_delete, axis=0)
+sent_ids_n =  np.delete(sent_ids,index_to_delete, axis=0)
 
 ''' reindex the target values to local indexes'''
 unique_vals_y= np.unique(y_true)
@@ -80,8 +93,9 @@ y_reindexed = np.zeros_like(y_true)
 for count, value in enumerate(unique_vals_y):
     y_reindexed[np.where(y_true == value)[0]] = count
 
+
 ''' train and test split'''
-X_train, X_test, y_train, y_test, st_tr, st_te, y_org_tr, y_org_te = train_test_split(X, y_reindexed,sent_ids, y_true,
+X_train, X_test, y_train, y_test, st_tr, st_te, y_org_tr, y_org_te = train_test_split(X, y_reindexed,sent_ids_n, y_true,
                                                                   test_size = 0.2,
                                                                   random_state = 0, shuffle=False)
 ''' XG-boost training '''
@@ -89,9 +103,9 @@ X_train, X_test, y_train, y_test, st_tr, st_te, y_org_tr, y_org_te = train_test_
 xgb_classifier = xgb.XGBClassifier(n_estimators=10,
                                    learning_rate=.01,
                                    max_features=10,
-                                   max_depth=3,
+                                   max_depth=4,
                                    reg_lambda=1,
-                                   reg_alpha=0,
+                                   reg_alpha=1,
                                    random_state=0) # https://xgboost.readthedocs.io/en/stable/parameter.html
 xgb_classifier.fit(X_train,y_train)
 
@@ -107,7 +121,7 @@ predic_probs_xgb_convert_back_te= np.zeros_like(predictions_xgb_convert_back_te)
 
 predictions_xgb_convert_back_tr= np.zeros((predictions_xgb_tr.shape[0],y_onehot.shape[1] )).astype('int')
 predic_probs_xgb_convert_back_tr= np.zeros_like(predictions_xgb_convert_back_tr).astype('float32')
-
+''' reindex back to global indexes'''
 for count, value in enumerate(unique_vals_y):
     predictions_xgb_convert_back_te[np.where(predictions_xgb_te == count),value] = 1
     predic_probs_xgb_convert_back_te[:, value] = predic_probs_xgb_te[:, count]
@@ -116,9 +130,10 @@ for count, value in enumerate(unique_vals_y):
     predic_probs_xgb_convert_back_tr[:,value] = predic_probs_xgb_tr[:,count]
 ########################################################################################################################
 ######################################### Language Model ###############################################################
-data_in, data_out, vocab_size = get_phonems_data(datasets_add,
-                     phonemes_add= 'LM/our_phonemes_df.csv',
-                     dict_add = 'LM/phonemes_df_harvard_dataset_phonemes_dic.csv')
+data_in, data_out, vocab_size = get_phonems_data(datasets_add, clustering_id=clustering_phonemes_id,
+                                                 clustering=clustering_phonemes,
+                     phonemes_add= phonemes_dataset_address ,
+                     dict_add = phonemes_dic_address)
 
 
 train_dataset = prepare_phoneme_dataset(data_in, data_out, vocab_size=vocab_size)
@@ -146,23 +161,40 @@ trainer.set_callback('on_batch_end', batch_end_callback)
 trainer.run()
 # now let's perform some evaluation
 model.eval()
-num_samples = 3
-steps=10
-do_sample = True
-input_length= 10
-for ii in np.random.randint(0,train_dataset.data_length,10):
-    x = torch.tensor(train_dataset[ii][0][:input_length], dtype=torch.long).to(trainer.device)
-    x = x.expand(num_samples, -1)
-    y, probs = model.generate(x, max_new_tokens=steps, do_sample=do_sample, top_k=40)
-    print('-' * 80)
-    print('predicted:')
-    print(y)
-    print('True:')
-    print(train_dataset[ii][0][:input_length+steps])
+
 
 ############################################# D4 Model ######################################################
+def sort_index(idexes,guid):
+    id_orders = np.zeros_like(idexes)+1000
+    for ii in range(len(idexes)):
+        temp =np.where(guid == idexes[ii])[0]
+        if len(temp) == 0:
+            pass
+        else:
+            id_orders[ii] = temp
+    sorting_id = np.argsort(np.squeeze(id_orders))
+    return idexes[sorting_id], sorting_id
+
+
+def visul_result_shenoy_order(y_org, P_all, P_p_all, P_lang_all):
+    print("D4_result", accuracy_score(y_org, np.argmax(P_all, axis=1)))
+    print("prediction process_result", accuracy_score(y_org, np.argmax(P_p_all, axis=1)))
+    print("language model_result", accuracy_score(y_org, np.argmax(P_lang_all, axis=1)))
+
+
+    indx_ph_arr = np.array([37, 1, 6, 4, 9, 18, 28, 24, 15, 33, 22, 11, 29, 31, 35, 34, 27, 20, 8, 36, 21, 3, 17, 32, 2, 23,
+                            7, 5, 10, 19, 25, 26, 30, 13, 0, 14]) # Shenoy ppr
+    uniques = np.array(np.unique(np.concatenate([y_org, np.argmax(P_p_all, axis=1)], axis=0)))
+    new_indx, sorting_id= sort_index(uniques, indx_ph_arr)
+    conf_matrix = confusion_matrix(y_org, np.argmax(P_p_all, axis=1))
+    conf_matrix = conf_matrix[sorting_id, :]
+    conf_matrix = conf_matrix[:,  sorting_id]
+
+    disp=ConfusionMatrixDisplay((conf_matrix), display_labels=np.array(list(phones_code_dic.keys()))[uniques])
+    disp.plot()
+
 def get_D4_result(model, st,y_true,y_predic_probs, PL0 ):
-    steps_L = 1
+    steps_L = 10
     do_sample_L = True
     for cc, ii_snt in enumerate(np.unique(st).astype('int')):
         sent_indexes = np.where(st == ii_snt)[0]
@@ -182,14 +214,14 @@ def get_D4_result(model, st,y_true,y_predic_probs, PL0 ):
 
             elif ii_wrd ==1:
                 x = torch.tensor(np.argmax(P_total[0, :].reshape([1,-1]), axis=1), dtype=torch.long).to(trainer.device)
-                x = x.expand(num_samples, -1)
+                x = x.expand(num_samples_langmodel, -1)
                 y, probs = model.generate(x, max_new_tokens=steps_L, do_sample=do_sample_L, top_k=40)
                 P_lang[1, :] = probs.mean(axis=0)[0, :]
                 P_total[1,:] = np.multiply( P_lang[1, :], P_pp[1,:])
             else:
 
                 x = torch.tensor(np.argmax(P_total[ii_wrd-input_length_L:ii_wrd, :], axis=1), dtype=torch.long).to(trainer.device)
-                x = x.expand(num_samples, -1)
+                x = x.expand(num_samples_langmodel, -1)
                 y, probs = model.generate(x, max_new_tokens=steps_L, do_sample=do_sample_L, top_k=40)
                 P_lang[ii_wrd, :] = probs.mean(axis=0)[0, :]
                 P_total[ii_wrd, :] = np.multiply( P_lang[ii_wrd, :], P_pp[ii_wrd, :])
@@ -209,12 +241,8 @@ def get_D4_result(model, st,y_true,y_predic_probs, PL0 ):
     return P_all, y_all, P_p_all, P_lang_all
 
 PL0 = first_y_tri.sum(axis=0)/first_y_tri.sum()
-P_all,y_all,P_p_all,P_lang_all = get_D4_result(model, st_tr,y_train,predic_probs_xgb_convert_back_tr, PL0)
+P_all,y_all,P_p_all,P_lang_all = get_D4_result(model, st_tr,y_true,predic_probs_xgb_convert_back_tr, PL0)
+visul_result_shenoy_order(y_org_tr, P_all, P_p_all, P_lang_all)
 
-print("D4_result", accuracy_score(y_org_tr, np.argmax(P_all, axis=1)))
-print("prediction process_result", accuracy_score(y_org_tr, np.argmax(P_p_all, axis=1)))
-print("language model_result", accuracy_score(y_org_tr, np.argmax(P_lang_all, axis=1)))
-
-conf_matrix_train = confusion_matrix(y_org_tr,np.argmax(P_all, axis=1) )
-disp=ConfusionMatrixDisplay(conf_matrix_train, display_labels=np.array(list(phones_code_dic.keys()))[np.unique(np.concatenate([y_org_tr,np.argmax(P_all, axis=1)], axis=0))])
-disp.plot()
+P_all,y_all,P_p_all,P_lang_all = get_D4_result(model, st_te,y_true,predic_probs_xgb_convert_back_te, PL0)
+visul_result_shenoy_order(y_org_te, P_all, P_p_all, P_lang_all)

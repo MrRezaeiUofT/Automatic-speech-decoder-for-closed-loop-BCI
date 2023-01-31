@@ -15,7 +15,7 @@ number_trials = 80
 n_components = 2
 epsilon = 1e-5
 
-patient_id = 'DM1013'
+patient_id = 'DM1012'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 save_result_path = datasets_add + patient_id + '/Results/' +'phonems_psd/'
@@ -141,6 +141,7 @@ for jj in range(corr.shape[1]):
         inputs=X[:, :, :, jj].mean(axis =1).reshape([X.shape[0], -1])
     elif input_type == 'spline':
         inputs = np.swapaxes(X, 1, -1)[:,jj,:,:].dot(bsp_w).reshape([X.shape[0], -1])
+        inputs = np.nan_to_num(inputs)
     elif input_type == 'kernel_pca':
         temp = X[:, :, :, jj].squeeze().reshape([X.shape[0], -1])
         Kernel_pca = KernelPCA(n_components=number_comp_pca, kernel="rbf")
@@ -164,7 +165,7 @@ chn_df = chn_df.sort_values(by=['HCPMMP1_label_2'])[chn_df.name.str.contains("ec
 indx_ch_arr = chn_df.index
 ''' sort phonemes channels'''
 indx_ph_arr = np.arange(corr.shape[0])
-# indx_ph_arr = np.array([0, 3, 5,6,7,10,11,12,14,15,17,18,19,21,23, 24,26,27,28,29,31,35, 36, 38, 1, 2,4,8,9,13,16,20,22,25,30,32,33,34,37,39]) # vows and con
+indx_ph_arr = np.array([37,1,6,4,9,18,28,24,15,33,22,11,29,31,35,34,27,20,8,36,21,3,17,32,2,23,7,5,10,19,25,26,30,13,0,14]) # Shenoy ppr
 # indx_ph_arr = np.array([11, 35, 21, 24, 27, 18, 17, 10, 5, 19, 3, 14, 31,6, 29, 12, 23, 26, 28, 22, 39, 4, 16, 2, 8, 9, 36, 34, 33, 30, 20, 1, 38]) # Edward cheng
 plt.figure(figsize=(20,10))
 rearranged_cov = corr[:,indx_ch_arr]
