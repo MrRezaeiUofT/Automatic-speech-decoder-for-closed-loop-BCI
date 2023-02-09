@@ -1,183 +1,126 @@
 from data_utilities import *
-import torch
-import pickle
-from sklearn.preprocessing import StandardScaler
-from sklearn.manifold import TSNE
+
 import seaborn as sns
 from sklearn.linear_model import LogisticRegression
-import statsmodels.api as sm
+
 import matplotlib.pyplot as plt
 from sklearn.decomposition import KernelPCA
-
-h_k = 120
+h_k = 100
 f_k=25
-number_trials = 80
-n_components = 2
+count_phoneme_thr = 50
 epsilon = 1e-5
-
-patient_id = 'DM1012'
+config_bs = {
+        'decode_length': h_k+1+f_k,
+    }
+kernel_pca_comp = 100
+patient_id = 'DM1005'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 save_result_path = datasets_add + patient_id + '/Results/' +'phonems_psd/'
+phonemes_dic_address = 'LM/phonemes_df_harvard_dataset_phonemes_dic.csv'
+phonemes_dataset_address = 'LM/our_phonemes_df.csv'
+clustering_phonemes = True
+clustering_phonemes_id = 1
+num_samples_langmodel = 30
+do_sample_langmodel = True
 trials_info_df=pd.read_csv(
         datasets_add + patient_id + '/' + 'sub-' + patient_id + '_ses-intraop_task-lombard_annot-produced-sentences.tsv',
         sep='\t')
 trials_id =trials_info_df.trial_id.to_numpy()
-''' get language model'''
-with open(data_add+'language_model_data.pkl', 'rb') as openfile:
-    # Reading from json file
-    language_data = pickle.load(openfile)
-pwtwt1, phoneme_duration_df, phones_NgramModel, phones_code_dic, count_phonemes = language_data
-
-''' Exclude the NAN and SP from the phonemes dataset'''
-# keys= list(phones_code_dic.keys())
-# sp_id = phones_code_dic['SP']
-# if 'NAN' in phones_code_dic:
-#     pass
-# else:
-#     phones_code_dic.update({'NAN': len(phones_code_dic)})
-# nan_id = phones_code_dic['NAN']
+phonemes_dict_df = pd.read_csv(datasets_add + phonemes_dic_address)
+if clustering_phonemes:
+    clr = 'clustering_' + str(clustering_phonemes_id)
+    phones_code_dic = dict(zip(phonemes_dict_df['phonemes'].to_list(), phonemes_dict_df[clr].to_list()))
+else:
+    phones_code_dic = dict(zip(phonemes_dict_df['phonemes'].to_list(), phonemes_dict_df['ids'].to_list()))
 
 
-''' gather all features for the phonemes'''
+''' gather all features for the phonemes and generate the dataset'''
 for trial in trials_id:
     if trial == 1:
-        XDesign_total, y_tr_total = get_trial_data(data_add, trial, h_k, f_k, phones_code_dic, tensor_enable=False)
-        phonemes_id_total = np.argmax(y_tr_total, axis=-1).reshape([-1,1])
-
-
+        XDesign_total, y_tri_total = get_trial_data(data_add, trial, h_k, f_k, phones_code_dic, tensor_enable=False)
+        first_y_tri = y_tri_total[0].reshape([1,-1])
+        phonemes_id_total = np.argmax(y_tri_total, axis=-1).reshape([-1,1])
+        sent_ids = trial*np.ones((phonemes_id_total.shape[0],1))
     else:
-        XDesign, y_tr = get_trial_data(data_add, trial, h_k, f_k, phones_code_dic, tensor_enable=False)
-        phonemes_id = np.argmax(y_tr, axis=-1).reshape([-1,1])
+        XDesign, y_tri = get_trial_data(data_add, trial, h_k, f_k, phones_code_dic, tensor_enable=False)
+        phonemes_id = np.argmax(y_tri, axis=-1).reshape([-1,1])
         XDesign_total = np.concatenate([XDesign_total,XDesign], axis=0)
         phonemes_id_total = np.concatenate([phonemes_id_total, phonemes_id], axis=0)
-        y_tr_total = np.concatenate([y_tr_total, y_tr], axis=0)
+        sent_ids =  np.concatenate([sent_ids,trial * np.ones((phonemes_id.shape[0], 1))], axis=0)
+        first_y_tri = np.concatenate([first_y_tri,y_tri[0].reshape([1,-1])], axis=0)
+        y_tri_total = np.concatenate([y_tri_total, y_tri], axis=0)
 
 
-''' visualize mean and std features'''
-# f, axes = plt.subplots(3, 3, figsize=(18,18), sharey=True)
-# for ph_id in np.unique(phonemes_id_total):
-#     index_similar = np.where(phonemes_id_total == ph_id)[0]
-#     XDesign_means = np.nanmean(XDesign_total[index_similar, :, :, :], axis=0).squeeze().transpose()
-#     XDesign_stds= np.std(XDesign_total[index_similar, :, :, :], axis=0).squeeze().transpose()
-#     XDesign_stds [XDesign_stds == 0] = np.nan
-    # axes[0, 0].matshow(XDesign_means[:, 0, :])
-    # axes[0, 0].set_xlabel('time-step')
-    # axes[0, 0].set_ylabel('ECoGs-ch')
-    # axes[0, 0].set_title('gamma_1' + 'ph-' + str(list(phones_code_dic.keys())[ph_id]))
-    # axes[0, 1].matshow(XDesign_means[:, 1, :])
-    # axes[0, 1].set_title('gamma_2')
-    # axes[0, 2].matshow(XDesign_means[:, 2, :])
-    # axes[0, 2].set_title('gamma_3')
-    #
-    # axes[1, 0].matshow(XDesign_stds[:, 0, :])
-    # axes[1, 1].matshow(XDesign_stds[:, 1, :])
-    # axes[1, 2].matshow(XDesign_stds[:, 2, :])
-    #
-    # SNRs = np.log(np.divide(XDesign_means[:, :, :]**2, XDesign_stds[:, :, :]**2))
-    # # SNRs[XDesign_stds < 0.01] = 0
-    # axes[2, 0].matshow((SNRs[:,0,:]))
-    # axes[2, 1].matshow((SNRs[:,1,:]))
-    # axes[2, 2].matshow((SNRs[:,2,:]))
-    # plt.savefig(save_result_path+'psd-Hk=' + str(h_k)+ 'ph-' + str(list(phones_code_dic.keys())[ph_id]) + '.png')
 
-
-''' TNSE visualization'''
-
-# X = np.divide(XDesign_total-XDesign_means.transpose(), XDesign_stds.transpose())[:,:,-1,:]
-# X = X.reshape([X.shape[0], -1])
-# scaler = StandardScaler()
-# X = scaler.fit_transform(X)
-# tsne = TSNE(n_components=n_components, verbose=1, perplexity=40, n_iter=300)
-# tsne_results = tsne.fit_transform(X)
-# finalDf = pd.DataFrame(data = tsne_results, columns = [['pc'+ str(ii) for ii in range(1,n_components+1)]])
-# finalDf['target'] = phonemes_id_total
-# f, axes = plt.subplots(7, 6, figsize=(32, 32), sharey=True, sharex=True)
-# for ii in range(7):
-#     for jj in range(6):
-#         phoneme_id = ii*(6)+jj
-#         df = finalDf.loc[np.where(finalDf.target == phoneme_id)[0]]
-#         axes[ii, jj].scatter(df.pc1, df.pc2)
-#         axes[ii, jj].set_title(str(list(phones_code_dic.keys())[phoneme_id]))
-#         axes[ii, jj].set_xlabel('pc1')
-#         axes[ii, jj].set_ylabel('pc2')
-# plt.savefig(save_result_path+'tsne-phonemes.png')
-''' re assign phonemes id with deleting 'NAN' and 'sp' '''
-# for ii in range(len(keys)):
-#     if (ii< sp_id) and (ii< nan_id):
-#         pass
-#     elif (ii< sp_id) and (ii> nan_id):
-#         phones_code_dic[keys[ii]] -=1
-#     elif (ii > sp_id) and (ii < nan_id):
-#         phones_code_dic[keys[ii]] -= 1
-#     elif (ii > sp_id) and (ii > nan_id):
-#         phones_code_dic[keys[ii]] -= 2
-#     elif (ii == sp_id):
-#         del phones_code_dic[keys[ii]]
-#     elif  (ii == nan_id):
-#         del phones_code_dic[keys[ii]]
-# pwtwt1_new = np.delete(pwtwt1, (sp_id), axis=0)
-# pwtwt1_new = np.delete(pwtwt1_new, (nan_id), axis=0)
-# pwtwt1_new = np.delete(pwtwt1_new, (sp_id), axis=1)
-# pwtwt1_new = np.delete(pwtwt1_new, (nan_id), axis=1)
-# pwtwt1_new=pwtwt1_new/(pwtwt1_new.sum(axis=1))
-''' define baselines'''
-config_bs = {
-        'decode_length': h_k+1+f_k,
-        'bsp_degree':100,
-    }
+X = np.swapaxes(XDesign_total, -3, -1).squeeze() [:,:,-1,:]##
+X = np.nan_to_num(X)
 bsp_w = bspline_window(config_bs)[:,1:-1]
-''' simple classification'''
-number_comp_pca = 7
-input_type= 'spline'
-features= [-1] # high-gamma=-1, low-gamma =-3, med-gamma=-2
-X = XDesign_total[:,:,features,:] ##
-y_onehot=  y_tr_total
-corr = np.zeros((y_onehot.shape[1],X.shape[-1],3))
-# count_phonemes = np.delete(count_phonemes,[sp_id,nan_id])
-for jj in range(corr.shape[1]):
-    print(jj)
-    if input_type == 'simple':
-        inputs=X[:, :, :, jj].mean(axis =1).reshape([X.shape[0], -1])
-    elif input_type == 'spline':
-        inputs = np.swapaxes(X, 1, -1)[:,jj,:,:].dot(bsp_w).reshape([X.shape[0], -1])
-        inputs = np.nan_to_num(inputs)
-    elif input_type == 'kernel_pca':
-        temp = X[:, :, :, jj].squeeze().reshape([X.shape[0], -1])
-        Kernel_pca = KernelPCA(n_components=number_comp_pca, kernel="rbf")
-        inputs = Kernel_pca.fit_transform(temp)
+y_true = np.argmax(y_tri_total,axis=-1)
+''' clustering the neural features indexes according to phonemes clusters  '''
+if clustering_phonemes:
+    clr = 'clustering_' + str(clustering_phonemes_id)
+    reindexing_dic = dict(zip(phonemes_dict_df['ids'].to_list(), phonemes_dict_df[clr].to_list()))
+    y_true = vec_translate(y_true, reindexing_dic)
+else:
+    pass
+''' delete infrequent phonemes'''
+uniques_y_true, counts_y_true = np.unique(y_true, return_counts=True)
+phoneme_id_to_delete = uniques_y_true[np.where(counts_y_true<count_phoneme_thr)[0]]
+for ii_di in range(len(phoneme_id_to_delete)):
+    if ii_di == 0:
+        index_to_delete = np.where(y_true == phoneme_id_to_delete[ii_di])[0]
+    else:
+        index_to_delete = np.concatenate([index_to_delete, np.where(y_true == phoneme_id_to_delete[ii_di])[0]], axis=0)
+y_true = np.delete(y_true,index_to_delete, axis=0)
+X = np.delete(X,index_to_delete, axis=0)
 
-    outputs = np.argmax(y_onehot, axis=1)
-    # weights = 1/(count_phonemes[outputs]+1)
-    # weights /=weights.max()
-    clf = LogisticRegression(penalty = 'l2', solver='liblinear',class_weight='balanced', random_state=0).fit(inputs, outputs)
+corr = np.zeros((np.unique(y_true).shape[0],X.shape[-2],3))
+
+for jj in range(corr.shape[1]):
+    inputs = X[:,jj,:].dot(bsp_w).reshape([X.shape[0], -1])
+    # Kernel_pca = KernelPCA(n_components=kernel_pca_comp, kernel="rbf")
+    # inputs = Kernel_pca.fit_transform(inputs)
+
+    clf = LogisticRegression(penalty = 'l2', solver='liblinear',class_weight='balanced', random_state=0).fit(inputs, y_true)
     y_hat = clf.predict_proba(inputs)
-    # GLM_model = sm.GLM(y_onehot, inputs, family=sm.families.)
-    # GLM_model_results = GLM_model.fit_regularized(L1_wt=1, refit=False)
-    # y_hat = GLM_model.predict(GLM_model_results.params, inputs)
-    corr[np.unique(outputs),jj,0] = np.mean(y_hat,axis=0)
-    corr[np.unique(outputs), jj,1] = np.max(y_hat, axis=0)
-    corr[np.unique(outputs), jj, 2] = np.max(np.abs(clf.coef_), axis=1).squeeze()
+    corr[:,jj,0] = np.mean(y_hat,axis=0)
+    corr[:, jj,1] = np.max(y_hat, axis=0)
+    corr[:, jj, 2] = np.max(np.abs(clf.coef_), axis=1).squeeze()
 
 ''' sort LFP channels'''
 chn_df = pd.read_csv( datasets_add + patient_id + '/sub-'+patient_id+'_electrodes.tsv', sep='\t')
-chn_df = chn_df.sort_values(by=['HCPMMP1_label_2'])[chn_df.name.str.contains("ecog")]
+chn_df = chn_df.sort_values(by=['HCPMMP1_label_1'])[chn_df.name.str.contains("ecog")]
 indx_ch_arr = chn_df.index
 ''' sort phonemes channels'''
 indx_ph_arr = np.arange(corr.shape[0])
 indx_ph_arr = np.array([37,1,6,4,9,18,28,24,15,33,22,11,29,31,35,34,27,20,8,36,21,3,17,32,2,23,7,5,10,19,25,26,30,13,0,14]) # Shenoy ppr
-# indx_ph_arr = np.array([11, 35, 21, 24, 27, 18, 17, 10, 5, 19, 3, 14, 31,6, 29, 12, 23, 26, 28, 22, 39, 4, 16, 2, 8, 9, 36, 34, 33, 30, 20, 1, 38]) # Edward cheng
 plt.figure(figsize=(20,10))
+new_indx, sorting_id = sort_index(np.unique(y_true), indx_ph_arr)
+
 rearranged_cov = corr[:,indx_ch_arr]
-rearranged_cov = rearranged_cov[indx_ph_arr,:]
+rearranged_cov = rearranged_cov[sorting_id,:]
 sns.heatmap((rearranged_cov[:,:,0]), annot=False, cmap='Blues')
-labels_ytick = np.array(list(phones_code_dic.keys()))[indx_ph_arr]
+labels_ytick = np.array(list(phones_code_dic.keys()))[new_indx]
 labels_xtick = chn_df.HCPMMP1_label_1.to_list()
 plt.title('Pred-mean-patient'+patient_id)
 plt.yticks(ticks=np.arange(len(labels_ytick)), labels=labels_ytick, rotation=0)
 plt.xticks(ticks=np.arange(len(labels_xtick)), labels=np.array(labels_xtick), rotation=90)
 plt.savefig(save_result_path+'predic-phonemes-mean.png')
 plt.savefig(save_result_path+'predic-phonemes-mean.svg',  format='svg')
+
+""" saving for visualization"""
+for i_phonemes in range(corr.shape[0]):
+    vis_df= pd.DataFrame()
+    vis_df['x'] = chn_df['native_x']
+    vis_df['y'] = chn_df['native_y']
+    vis_df['z'] = chn_df['native_z']
+    vis_df['size'] = corr[i_phonemes,:,2]
+    vis_df['color'] = corr[i_phonemes,:,2]
+    vis_df.to_csv(save_result_path+'/vis_'+labels_ytick[i_phonemes]+'.txt', sep='\t', index=False)
+
+""""""
+
 
 plt.figure(figsize=(20,10))
 sns.heatmap((rearranged_cov[:,:,1]), annot=False, cmap='Blues')
@@ -195,7 +138,7 @@ plt.xticks(ticks=np.arange(len(labels_xtick)), labels=np.array(labels_xtick), ro
 plt.savefig(save_result_path+'max_encoding_weight.png')
 plt.savefig(save_result_path+'max_encoding_weight.svg',  format='svg')
 ''' Summerized Maximum Encoding'''
-data_arr = rearranged_cov[:,:,2]/rearranged_cov[:,:,2].max()
+data_arr = rearranged_cov[:,:,0]#/rearranged_cov[:,:,0].max()
 summ_df = pd.DataFrame(data_arr, columns=labels_xtick)
 summ_df['phonemes'] = labels_ytick
 summ_df_melt = pd.melt(summ_df,id_vars=['phonemes'])
@@ -210,8 +153,8 @@ for phone_ii in labels_ytick:
 
 plt.figure(figsize=(8,10))
 sns.heatmap(summary_data, annot=False, cmap='Blues')
-plt.title('Encoding-max-patient-summary'+patient_id)
+plt.title('Encoding-max-mean-patient-summary'+patient_id)
 plt.yticks(ticks=np.arange(len(labels_ytick)), labels=labels_ytick, rotation=0)
 plt.xticks(ticks=np.arange(len(labels_xtick_summary)), labels=np.array(labels_xtick_summary), rotation=90)
-plt.savefig(save_result_path+'max_encoding_weight_summary.png')
-plt.savefig(save_result_path+'max_encoding_weight_summary.svg',  format='svg')
+plt.savefig(save_result_path+'max-mean_encoding_weight_summary.png')
+plt.savefig(save_result_path+'max-mean_encoding_weight_summary.svg',  format='svg')

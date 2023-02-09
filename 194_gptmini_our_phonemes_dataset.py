@@ -6,7 +6,8 @@ from mingpt.model import GPT
 ############# our phoneme dataset from 191xxx #######################
 datasets_add = './Datasets/'
 
-data_in, data_out, vocab_size = get_phonems_data(datasets_add,
+data_in, data_out, vocab_size = get_phonems_data(datasets_add,clustering_id=1,
+                                                 clustering=False,
                      phonemes_add= 'LM/our_phonemes_df.csv',
                      dict_add = 'LM/phonemes_df_harvard_dataset_phonemes_dic.csv')
 

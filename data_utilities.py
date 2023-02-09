@@ -194,12 +194,12 @@ def listToString(s):
 
 def bspline_window(config_LSSM_MPP):
     x = np.linspace(0, 1, config_LSSM_MPP['decode_length'])
-    bsp_degree = config_LSSM_MPP['bsp_degree']
+    # bsp_degree = config_LSSM_MPP['bsp_degree']
     # y_py = np.zeros((x.shape[0], bsp_degree * 2))
     # for i in range(bsp_degree * 2):
     #     y_py[:, i] = intrp.BSpline(np.linspace(0, 1, 3 * bsp_degree + 1),
     #                                (np.arange(bsp_degree * 2) == i).astype(float), bsp_degree, extrapolate=False)(x)
-    y = dmatrix("bs(x, df=40, degree=20, include_intercept=True) - 1", {"x": x})
+    y = dmatrix("bs(x, df=20, degree=10, include_intercept=True) - 1", {"x": x})
         # y_py[:, i]/= y_py[:, i].max()
     # plt.figure()
     # plt.plot(y_py)
@@ -339,3 +339,14 @@ def apply_stress_remove(input_list):
 
 def vec_translate(a, my_dict):
    return np.vectorize(my_dict.__getitem__)(a)
+
+def sort_index(idexes,guid):
+    id_orders = np.zeros_like(idexes)+1000
+    for ii in range(len(idexes)):
+        temp =np.where(guid == idexes[ii])[0]
+        if len(temp) == 0:
+            pass
+        else:
+            id_orders[ii] = temp
+    sorting_id = np.argsort(np.squeeze(id_orders))
+    return idexes[sorting_id], sorting_id
