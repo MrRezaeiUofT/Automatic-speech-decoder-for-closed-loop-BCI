@@ -5,23 +5,25 @@ from sklearn.linear_model import LogisticRegression
 
 import matplotlib.pyplot as plt
 from sklearn.decomposition import KernelPCA
-h_k = 100
-f_k=25
+h_k = 2000
+f_k=2000
+d_sample = 10
 count_phoneme_thr = 50
 epsilon = 1e-5
 config_bs = {
-        'decode_length': h_k+1+f_k,
+        'decode_length': len(np.arange(0,h_k+1+f_k,d_sample)),
     }
 kernel_pca_comp = 100
-patient_id = 'DM1005'
+patient_id = 'DM1013'
+raw_denoised = 'raw'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
-save_result_path = datasets_add + patient_id + '/Results/' +'phonems_psd/'
+save_result_path = datasets_add + patient_id + '/Results_'+raw_denoised+'/' +'phonems_psd/'
 phonemes_dic_address = 'LM/phonemes_df_harvard_dataset_phonemes_dic.csv'
 phonemes_dataset_address = 'LM/our_phonemes_df.csv'
 clustering_phonemes = True
 clustering_phonemes_id = 1
-num_samples_langmodel = 30
+
 do_sample_langmodel = True
 trials_info_df=pd.read_csv(
         datasets_add + patient_id + '/' + 'sub-' + patient_id + '_ses-intraop_task-lombard_annot-produced-sentences.tsv',
@@ -36,14 +38,15 @@ else:
 
 
 ''' gather all features for the phonemes and generate the dataset'''
-for trial in trials_id:
-    if trial == 1:
-        XDesign_total, y_tri_total = get_trial_data(data_add, trial, h_k, f_k, phones_code_dic, tensor_enable=False)
+for trial in trials_id[1:]:
+    print(trial)
+    if trial == 2:
+        XDesign_total, y_tri_total = get_trial_data(data_add, trial, h_k, f_k, phones_code_dic,raw_denoised, d_sample=d_sample, tensor_enable=False)
         first_y_tri = y_tri_total[0].reshape([1,-1])
         phonemes_id_total = np.argmax(y_tri_total, axis=-1).reshape([-1,1])
         sent_ids = trial*np.ones((phonemes_id_total.shape[0],1))
     else:
-        XDesign, y_tri = get_trial_data(data_add, trial, h_k, f_k, phones_code_dic, tensor_enable=False)
+        XDesign, y_tri = get_trial_data(data_add, trial, h_k, f_k, phones_code_dic,raw_denoised, d_sample=d_sample, tensor_enable=False)
         phonemes_id = np.argmax(y_tri, axis=-1).reshape([-1,1])
         XDesign_total = np.concatenate([XDesign_total,XDesign], axis=0)
         phonemes_id_total = np.concatenate([phonemes_id_total, phonemes_id], axis=0)
@@ -84,8 +87,12 @@ for jj in range(corr.shape[1]):
 
     clf = LogisticRegression(penalty = 'l2', solver='liblinear',class_weight='balanced', random_state=0).fit(inputs, y_true)
     y_hat = clf.predict_proba(inputs)
-    corr[:,jj,0] = np.mean(y_hat,axis=0)
-    corr[:, jj,1] = np.max(y_hat, axis=0)
+    temp_mean= np.mean(y_hat,axis=0)
+    temp_mean[temp_mean<= 1/corr.shape[0]] = 0
+    temp_max=np.max(y_hat, axis=0)
+    temp_max[temp_max<= 1/corr.shape[0]] = 0
+    corr[:,jj,0] = temp_mean
+    corr[:, jj,1] = temp_max
     corr[:, jj, 2] = np.max(np.abs(clf.coef_), axis=1).squeeze()
 
 ''' sort LFP channels'''
@@ -112,12 +119,15 @@ plt.savefig(save_result_path+'predic-phonemes-mean.svg',  format='svg')
 """ saving for visualization"""
 for i_phonemes in range(corr.shape[0]):
     vis_df= pd.DataFrame()
-    vis_df['x'] = chn_df['native_x']
-    vis_df['y'] = chn_df['native_y']
-    vis_df['z'] = chn_df['native_z']
-    vis_df['size'] = corr[i_phonemes,:,2]
-    vis_df['color'] = corr[i_phonemes,:,2]
-    vis_df.to_csv(save_result_path+'/vis_'+labels_ytick[i_phonemes]+'.txt', sep='\t', index=False)
+    vis_df['x'] = chn_df['mni_x']
+    vis_df['y'] = chn_df['mni_y']
+    vis_df['z'] = chn_df['mni_z']
+    vis_df['color'] = corr[i_phonemes, :, 0]
+    vis_df['color'][vis_df['color'] < 1 / corr.shape[0]] = np.nan
+    vis_df['size'] = corr[i_phonemes,:,0]
+    vis_df['size'][vis_df['size'] < 1/corr.shape[0]] = np.nan
+    vis_df.to_csv(save_result_path + '/vis_' + labels_ytick[i_phonemes] + '.txt', sep='\t', index=False)
+    vis_df.to_csv(save_result_path+'/vis_'+labels_ytick[i_phonemes]+'.node', sep='\t', index=False)
 
 """"""
 
@@ -158,3 +168,29 @@ plt.yticks(ticks=np.arange(len(labels_ytick)), labels=labels_ytick, rotation=0)
 plt.xticks(ticks=np.arange(len(labels_xtick_summary)), labels=np.array(labels_xtick_summary), rotation=90)
 plt.savefig(save_result_path+'max-mean_encoding_weight_summary.png')
 plt.savefig(save_result_path+'max-mean_encoding_weight_summary.svg',  format='svg')
+
+### find the most representetive channels and use it for psd analysis
+from sklearn import preprocessing
+y_true_uniques=np.unique(y_true)
+for phoneme_id in range(labels_ytick.shape[0]):
+    max_encoding=corr[phoneme_id, :, 0].max()
+    if max_encoding > 1/labels_ytick.shape[0]:
+        chan_id = np.where(corr[phoneme_id, :, 0] == max_encoding)[0]
+        all_sign= X[np.where(y_true == y_true_uniques[phoneme_id])[0],chan_id[0], : ].squeeze()
+        scaler=preprocessing.MinMaxScaler()
+        all_sign = scaler.fit_transform(all_sign)
+        mean_sig = all_sign.mean(axis=0)
+        std_sig = all_sign.std(axis=0)
+        plt.figure()
+        xs_id=np.arange(-h_k,f_k+1, d_sample)
+        plt.fill_between(xs_id, (mean_sig - .1 * np.sqrt(std_sig)).squeeze(), (mean_sig + 0.1 * np.sqrt(std_sig)).squeeze(),
+                         color='k',
+                         label='HI-DGD 95%', alpha=.5)
+        plt.plot(xs_id, mean_sig, 'k', label='mean')
+        plt.axvline(x=xs_id[h_k//d_sample], color='r', label='onset')
+        plt.title('Encoding-chn-'+str(chan_id[0])+'-'+ labels_ytick[phoneme_id]+'-'+ patient_id+'-maxEncoding-'+str(max_encoding))
+        plt.legend()
+
+        plt.savefig(save_result_path + 'Encoding-chn-'+str(chan_id[0])+'-'+ labels_ytick[phoneme_id]+'.png')
+        plt.savefig(save_result_path + 'Encoding-chn-'+str(chan_id[0])+'-'+ labels_ytick[phoneme_id]+'.svg', format='svg')
+        plt.close()

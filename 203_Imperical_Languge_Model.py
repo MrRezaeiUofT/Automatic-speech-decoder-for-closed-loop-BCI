@@ -3,17 +3,18 @@ import matplotlib.pyplot as plt
 import json
 import pickle
 from model_utils import get_language_components
-patient_id = 'DM1012'
+patient_id = 'DM1013'
+raw_denoised = 'raw'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
-save_result_path = datasets_add + patient_id + '/Results/'
+save_result_path = datasets_add + patient_id + '/Results_'+raw_denoised+'/'
 # Opening JSON file
 with open(data_add + "dataset_info.json", 'r') as openfile:
     # Reading from json file
     dataset_info = json.load(openfile)
 
 N_gram = 2
-total_data = pd.read_csv(datasets_add + patient_id + '/' + 'Preprocessed_data/' + 'prepro_phoneme_neural_total_v1_denoised.csv')
+total_data = pd.read_csv(data_add + 'prepro_phoneme_neural_total_v1_'+raw_denoised+'.csv')
 
 ''' Only consider the onset data'''
 non_phoneme_onset = total_data[total_data.phoneme_onset == 0].index.to_numpy()

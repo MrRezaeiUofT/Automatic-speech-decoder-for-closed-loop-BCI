@@ -11,19 +11,23 @@ import torch
 from mingpt.utils import set_seed
 set_seed(3407)
 from mingpt.model import GPT
+import matplotlib.pyplot as plt
+
 ''' constants'''
-h_k = 50
-f_k=25
+h_k = 500
+f_k=500
+d_sample=10
 count_phoneme_thr = 50
 epsilon = 1e-5
 config_bs = {
-        'decode_length': h_k+1+f_k,
+        'decode_length': len(np.arange(0,h_k+1+f_k,d_sample)),
     }
-kernel_pca_comp = 100
+kernel_pca_comp = 50
 patient_id = 'DM1012'
+raw_denoised = 'raw'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
-save_result_path = datasets_add + patient_id + '/Results/' +'phonems_psd/'
+save_result_path = datasets_add + patient_id + '/Results_'+raw_denoised+'/' +'phonems_psd/'
 phonemes_dic_address = 'LM/phonemes_df_harvard_dataset_phonemes_dic.csv'
 phonemes_dataset_address = 'LM/phonemes_df_harvard_dataset.csv'
 clustering_phonemes = True
@@ -43,14 +47,15 @@ else:
     phones_code_dic = dict(zip(phonemes_dict_df['phonemes'].to_list(), phonemes_dict_df['ids'].to_list()))
 
 ''' gather all features for the phonemes and generate the dataset'''
-for trial in trials_id:
-    if trial == 1:
-        XDesign_total, y_tri_total = get_trial_data(data_add, trial, h_k, f_k, phones_code_dic, tensor_enable=False)
+for trial in trials_id[1:]:
+    print(trial)
+    if trial == 2:
+        XDesign_total, y_tri_total = get_trial_data(data_add, trial, h_k, f_k, phones_code_dic,raw_denoised,d_sample=d_sample, tensor_enable=False)
         first_y_tri = y_tri_total[0].reshape([1,-1])
         phonemes_id_total = np.argmax(y_tri_total, axis=-1).reshape([-1,1])
         sent_ids = trial*np.ones((phonemes_id_total.shape[0],1))
     else:
-        XDesign, y_tri = get_trial_data(data_add, trial, h_k, f_k, phones_code_dic, tensor_enable=False)
+        XDesign, y_tri = get_trial_data(data_add, trial, h_k, f_k, phones_code_dic,raw_denoised,d_sample=d_sample, tensor_enable=False)
         phonemes_id = np.argmax(y_tri, axis=-1).reshape([-1,1])
         XDesign_total = np.concatenate([XDesign_total,XDesign], axis=0)
         phonemes_id_total = np.concatenate([phonemes_id_total, phonemes_id], axis=0)
@@ -65,8 +70,8 @@ y_onehot=  y_tri_total
 X = np.nan_to_num(X)
 bsp_w = bspline_window(config_bs)[:,1:-1]
 X=X.dot(bsp_w).reshape([X.shape[0], -1])
-# Kernel_pca = KernelPCA(n_components=kernel_pca_comp, kernel="rbf")
-# X = Kernel_pca.fit_transform(X)
+Kernel_pca = KernelPCA(n_components=kernel_pca_comp, kernel="rbf")
+X = Kernel_pca.fit_transform(X)
 y_true = np.argmax(y_onehot, axis=-1)
 ''' clustering the neural features indexes according to phonemes clusters  '''
 if clustering_phonemes:
@@ -95,24 +100,28 @@ for count, value in enumerate(unique_vals_y):
 
 
 ''' train and test split'''
-X_train, X_test, y_train, y_test, st_tr, st_te, y_org_tr, y_org_te = train_test_split(X, y_reindexed,sent_ids_n, y_true,
-                                                                  test_size = 0.2,
+X_train, X_test, y_train, y_test, st_tr, st_te, y_org_tr, y_org_te, index_tr, index_te = train_test_split(X,
+                                                                                      y_reindexed,
+                                                                                      sent_ids_n,
+                                                                                      y_true,np.arange(y_true.shape[0]),
+                                                                  test_size = 0.3,
                                                                   random_state = 0, shuffle=False)
 ''' XG-boost training '''
+from imblearn.under_sampling import RandomUnderSampler
 oversample = SMOTE()
+undersample = RandomUnderSampler()
 X_train_over, y_train_over =oversample.fit_resample(X_train,y_train)
-xgb_classifier = xgb.XGBClassifier(n_estimators=kernel_pca_comp,
-                                   learning_rate=.01,
-                                   max_depth=3,
-                                   random_state=0,
-                                   eval_metric=["auc", "error"]) # https://xgboost.readthedocs.io/en/stable/parameter.html
+# X_train_over, y_train_over =undersample.fit_resample(X_train, y_train )
+xgb_classifier = xgb.XGBClassifier(n_estimators=2*kernel_pca_comp,
+                                   random_state=0) # https://xgboost.readthedocs.io/en/stable/parameter.html
 xgb_classifier.fit(X_train_over,y_train_over)
 
 predictions_xgb_te = xgb_classifier.predict(X_test)
 predic_probs_xgb_te = xgb_classifier.predict_proba(X_test)
 predictions_xgb_tr = xgb_classifier.predict(X_train)
 predic_probs_xgb_tr = xgb_classifier.predict_proba(X_train)
-
+print("xgboost_result_tr", accuracy_score(y_train, predictions_xgb_tr))
+print("xgboost_result_te", accuracy_score(y_test, predictions_xgb_te))
 ''' convert back the indexes to general indexing for all datasets '''
 
 predictions_xgb_convert_back_te= np.zeros((predictions_xgb_te.shape[0],y_onehot.shape[1] )).astype('int')
@@ -137,7 +146,7 @@ data_in, data_out, vocab_size = get_phonems_data(datasets_add, clustering_id=clu
 
 train_dataset = prepare_phoneme_dataset(data_in, data_out, vocab_size=vocab_size)
 model_config = GPT.get_default_config()
-model_config.model_type = 'gpt-mini'
+model_config.model_type = 'gpt-nano'
 model_config.vocab_size = train_dataset.get_vocab_size()
 model_config.block_size = train_dataset.get_block_size()
 model = GPT(model_config)
@@ -146,8 +155,8 @@ model = GPT(model_config)
 from mingpt.trainer import Trainer
 
 train_config = Trainer.get_default_config()
-train_config.learning_rate = 1e-3 # the model we're using is so small that we can go a bit faster
-train_config.max_iters = 100
+train_config.learning_rate = 1e-4 # the model we're using is so small that we can go a bit faster
+train_config.max_iters = 200
 train_config.num_workers = 0
 trainer = Trainer(train_config, model, train_dataset)
 
@@ -161,24 +170,25 @@ trainer.run()
 # now let's perform some evaluation
 model.eval()
 #
-# input_length= 15
-# prediction_result = np.zeros((1000,2))
-# p=0
-# for ii in np.random.randint(0,data_in.shape[0],prediction_result.shape[0]):
-#     x = torch.tensor(data_in[ii][:input_length], dtype=torch.long).to(trainer.device)
-#     x = x.expand(10, -1)
-#
-#     y, probs = model.generate(x, max_new_tokens=1, do_sample=True, top_k=40)
-#     prediction_result[p, 0] = data_in[ii][input_length + 1]
-#     prediction_result[p, 1] = (y.detach().cpu()[0, -1])
-#     # print('-' * 80)
-#     p =p+1
-# print('accuracy= %f', accuracy_score(prediction_result[:,0],prediction_result[:,1])*100)
+
+prediction_result = np.zeros((500,2))
+p=0
+for ii in np.random.randint(0,data_in.shape[0],prediction_result.shape[0]):
+    input_length =  np.random.randint(1,15)
+    x = torch.tensor(data_in[ii][:input_length], dtype=torch.long).to(trainer.device)
+    x = x.expand(10, -1)
+
+    y, probs = model.generate(x, max_new_tokens=1, do_sample=True, top_k=40)
+    prediction_result[p, 0] = data_in[ii][input_length ]
+    prediction_result[p, 1] = (y.detach().cpu()[0, -1])
+    # print('-' * 80)
+    p =p+1
+print('accuracy= %f', accuracy_score(prediction_result[:,0],prediction_result[:,1])*100)
 ############################################# D4 Model ######################################################
 
 
 
-def visul_result_shenoy_order(y_org, P_all, P_p_all, P_lang_all):
+def visul_result_shenoy_order(y_org, P_all, P_p_all, P_lang_all, label):
     print("D4_result", accuracy_score(y_org, np.argmax(P_all, axis=1)))
     print("prediction process_result", accuracy_score(y_org, np.argmax(P_p_all, axis=1)))
     print("language model_result", accuracy_score(y_org, np.argmax(P_lang_all, axis=1)))
@@ -186,14 +196,16 @@ def visul_result_shenoy_order(y_org, P_all, P_p_all, P_lang_all):
 
     indx_ph_arr = np.array([37, 1, 6, 4, 9, 18, 28, 24, 15, 33, 22, 11, 29, 31, 35, 34, 27, 20, 8, 36, 21, 3, 17, 32, 2, 23,
                             7, 5, 10, 19, 25, 26, 30, 13, 0, 14]) # Shenoy ppr
-    uniques = np.array(np.unique(np.concatenate([y_org, np.argmax(P_p_all, axis=1)], axis=0)))
+    uniques = np.array(np.unique(np.concatenate([y_org, np.argmax(P_all, axis=1)], axis=0)))
     new_indx, sorting_id= sort_index(uniques, indx_ph_arr)
-    conf_matrix = confusion_matrix(y_org, np.argmax(P_p_all, axis=1))
+    conf_matrix = confusion_matrix(y_org, np.argmax(P_all, axis=1))
     conf_matrix = conf_matrix[sorting_id, :]
     conf_matrix = conf_matrix[:,  sorting_id]
 
     disp=ConfusionMatrixDisplay((conf_matrix), display_labels=np.array(list(phones_code_dic.keys()))[new_indx])
     disp.plot()
+    plt.savefig(save_result_path + 'max-mean_encoding_weight_summary_'+label+'_.png')
+    plt.savefig(save_result_path + 'max-mean_encoding_weight_summary_'+label+'_.svg', format='svg')
 
 def get_D4_result(model, st,y_true,y_predic_probs, PL0 ):
     steps_L = 2
@@ -218,14 +230,14 @@ def get_D4_result(model, st,y_true,y_predic_probs, PL0 ):
             input_length_L = ii_wrd
             if ii_wrd == 0:
                 P_total[ii_wrd,:] = np.multiply( PL0, P_pp[0,:])
-                P_lang[ii_wrd,:] = np.multiply( PL0, P_pp[0,:])
+                P_lang[ii_wrd,:] =  np.multiply( PL0, P_pp[0,:])
 
             elif ii_wrd ==1:
-                x = torch.tensor(np.argmax(P_total[0, :].reshape([1,-1]), axis=1), dtype=torch.long).to(trainer.device)
+                x = torch.tensor(np.argmax(P_total[ii_wrd-1, :].reshape([1,-1]), axis=1), dtype=torch.long).to(trainer.device)
                 x = x.expand(num_samples_langmodel, -1)
                 y, probs = model.generate(x, max_new_tokens=steps_L, do_sample=do_sample_L, top_k=40)
-                P_lang[1, :] = probs.mean(axis=0)[0, :]
-                P_total[1,:] = np.multiply( P_lang[1, :], P_pp[1,:])
+                P_lang[ii_wrd, :] = probs.mean(axis=0)[0, :]
+                P_total[ii_wrd,:] = np.multiply( P_lang[ii_wrd, :], P_pp[ii_wrd,:])
             else:
 
                 x = torch.tensor(np.argmax(P_total[ii_wrd-input_length_L:ii_wrd, :], axis=1), dtype=torch.long).to(trainer.device)
@@ -250,7 +262,7 @@ def get_D4_result(model, st,y_true,y_predic_probs, PL0 ):
 
 PL0 = first_y_tri.mean(axis=0)/first_y_tri.sum()
 P_all,y_all,P_p_all,P_lang_all = get_D4_result(model, st_tr,y_true,predic_probs_xgb_convert_back_tr, PL0)
-visul_result_shenoy_order(y_org_tr, P_all, P_p_all, P_lang_all)
+visul_result_shenoy_order(y_org_tr, P_all, P_p_all, P_lang_all,'train')
 
 P_all,y_all,P_p_all,P_lang_all = get_D4_result(model, st_te,y_true,predic_probs_xgb_convert_back_te, PL0)
-visul_result_shenoy_order(y_org_te, P_all, P_p_all, P_lang_all)
+visul_result_shenoy_order(y_org_te, P_all, P_p_all, P_lang_all, 'test')

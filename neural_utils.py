@@ -8,51 +8,71 @@ from mne.time_frequency import (tfr_array_morlet)
 from mne.baseline import rescale
 import pickle
 import json
+from neurodsp.filt import filter_signal
+from scipy.signal import hilbert, chirp
+import numpy as np
 
 def get_psd_features(total_data_df, psd_config, patient_id, saving_add):
 
     margin_length = psd_config['margin_length']
-    if patient_id == 'DM1008':
-       pass
-    else:
-        pass
+
     for trial in total_data_df.trial_id.unique():
-        print('trial=%d'%(trial))
+        print('trial=%d of %d'%(trial,len(total_data_df.trial_id.unique())))
         if trial == total_data_df.trial_id.unique()[0]: #
             indx_df = total_data_df.loc[
                 (total_data_df.trial_id == trial) | (total_data_df.baseline_flag == trial)].index
+            indx_baselines = total_data_df.loc[
+                 (total_data_df.baseline_flag == trial)].index
 
             af_indx = np.arange(indx_df[-1] + 1, indx_df[-1] + 1 + margin_length, 1)
 
             total_index = np.concatenate([ indx_df, af_indx], axis=0)
             trial_df = total_data_df.loc[total_index].reset_index()
-            indx_baselines = trial_df.loc[(trial_df.baseline_flag == trial) & (
-                        trial_df.index < (trial_df.shape[0] - margin_length))].index.to_numpy()
 
+            drop_indx = np.arange(0, len(indx_baselines))
+            temp_af = np.arange(trial_df.shape[0]- 1, trial_df.shape[0] - 1 - margin_length, -1)
+            drop_indx = np.concatenate([drop_indx, temp_af], axis=0)
+            neural_data = np.expand_dims(np.transpose(trial_df[psd_config['chnls']].to_numpy()), axis=0)
+            neural_psd = psd_extractor_v2(neural_data, psd_config, np.arange(0, len(indx_baselines)), type='power')
         elif trial == total_data_df.trial_id.unique()[-1]:
             indx_df = total_data_df.loc[
                 (total_data_df.trial_id == trial) | (total_data_df.baseline_flag == trial)].index
-            bf_indx = np.arange( indx_df[0] - margin_length, indx_df[0], 1)
+            indx_baselines = total_data_df.loc[
+                (total_data_df.baseline_flag == trial)].index
+            if len(indx_baselines > 0):
+                bf_indx = np.arange( indx_baselines[0] - margin_length, indx_baselines[0], 1)
+            else:
+                bf_indx=[]
+
 
 
             total_index = np.concatenate([bf_indx, indx_df], axis=0)
             trial_df = total_data_df.loc[total_index].reset_index()
-            indx_baselines = trial_df.loc[(trial_df.baseline_flag == trial) & (trial_df.index > margin_length) ].index.to_numpy()
 
+            drop_indx = np.arange(margin_length, len(indx_baselines) + margin_length)
+            temp_bf = np.arange(0, margin_length)
+            drop_indx = np.concatenate([temp_bf, drop_indx], axis=0)
+            neural_data = np.expand_dims(np.transpose(trial_df[psd_config['chnls']].to_numpy()), axis=0)
+            neural_psd = psd_extractor_v2(neural_data, psd_config,  np.arange(margin_length, len(indx_baselines) + margin_length), type='power')
 
         else:
             indx_df = total_data_df.loc[(total_data_df.trial_id == trial) | (total_data_df.baseline_flag == trial)].index
-            bf_indx = np.arange(indx_df[0]-margin_length,indx_df[0], 1)
+            indx_baselines = total_data_df.loc[
+                (total_data_df.baseline_flag == trial)].index
+            bf_indx = np.arange(indx_baselines[0]-margin_length,indx_baselines[0], 1)
             af_indx = np.arange(indx_df[-1] + 1, indx_df[-1] + 1 + margin_length, 1)
 
             total_index = np.concatenate([bf_indx, indx_df, af_indx], axis=0)
             trial_df = total_data_df.loc[total_index].reset_index()
-            indx_baselines = trial_df.loc[(trial_df.baseline_flag == trial) & (trial_df.index > margin_length) & (
-                    trial_df.index< (trial_df.shape[0]- margin_length)) ].index.to_numpy()
 
-        neural_data = np.expand_dims(np.transpose(trial_df[psd_config['chnls']].to_numpy()), axis=0)
-        neural_psd = psd_extractor(neural_data, psd_config, indx_baselines, type='power')
-        # Baseline the output
+            drop_indx = np.arange(margin_length, len(indx_baselines) + margin_length)
+            temp_bf = np.arange(0, margin_length)
+            temp_af = np.arange(trial_df.shape[0] - 1, trial_df.shape[0]  - 1 - margin_length, -1)
+            drop_indx = np.concatenate([temp_bf, drop_indx, temp_af])
+
+            neural_data = np.expand_dims(np.transpose(trial_df[psd_config['chnls']].to_numpy()), axis=0)
+            neural_psd = psd_extractor_v2(neural_data, psd_config,  np.arange(margin_length, len(indx_baselines) + margin_length), type='power')
+            # Baseline the output
 
 
         if psd_config['smoothing']:
@@ -62,23 +82,13 @@ def get_psd_features(total_data_df, psd_config, patient_id, saving_add):
             for ii in range(neural_psd.shape[0]):
                 for jj in range(neural_psd.shape[1]):
                     neural_psd[ii, jj, :] = np.convolve(neural_psd[ii, jj, :], window, 'same')
-        neural_psd_band, freqs = feature_mapping(neural_psd, psd_config)
-        trial_df = trial_df.drop(indx_baselines)
-        neural_psd_band = np.delete(neural_psd_band, indx_baselines, axis=-1)
-        if trial == total_data_df.trial_id.unique()[0]:
-            temp_indx_bf = np.arange(0,margin_length)
-            trial_df = trial_df.drop(temp_indx_bf)
-            neural_psd_band = np.delete(neural_psd_band, temp_indx_bf, axis=-1)
-        elif trial == total_data_df.trial_id.unique()[-1]:
-            temp_indx_af = np.arange(trial_df.shape[0]-1,trial_df.shape[0]-1- margin_length,-1)
-            trial_df = trial_df.drop(temp_indx_af)
-            neural_psd_band = np.delete(neural_psd_band, temp_indx_af, axis=-1)
+        if psd_config['avg_freq_bands']:
+            neural_psd_band, freqs = feature_mapping(neural_psd, psd_config)
         else:
-            temp_indx_bf = np.arange(0, margin_length)
-            temp_indx_af = np.arange(trial_df.shape[0] - 1, trial_df.shape[0] - 1 - margin_length, -1)
-            temp_indx = np.concatenate([temp_indx_bf, temp_indx_af])
-            trial_df = trial_df.drop(temp_indx)
-            neural_psd_band = np.delete(neural_psd_band, temp_indx, axis=-1)
+            neural_psd_band=neural_psd
+            freqs=1
+        trial_df = trial_df.drop(drop_indx)
+        neural_psd_band = np.delete(neural_psd_band, drop_indx, axis=-1)
 
         file_name = saving_add + 'trial_' + str(trial) + '.pkl'
         with  open(file_name, "wb") as open_file:
@@ -95,13 +105,34 @@ def psd_extractor(neural_data, psd_config, index_baselines, type='power'):
     epochs = EpochsArray(data=neural_data, info=info, verbose=0)
     if type == 'power':
         power = tfr_array_morlet(epochs.get_data(), sfreq=epochs.info['sfreq'], freqs=freqs, n_cycles=n_cycles,
-                                 output='avg_power', verbose=0)
-        if len(index_baselines > 0):
-            rescale(power, epochs.times, (np.min(index_baselines) / psd_config['sampling_freq'], np.max(index_baselines) / psd_config['sampling_freq']),
-            mode='zscore', copy=False, verbose=2)
+                                 output='power', verbose=0).squeeze()
+        if len(index_baselines)>0:
+            power=rescale(power, epochs.times, (np.min(index_baselines) / psd_config['sampling_freq'], np.max(index_baselines) / psd_config['sampling_freq']),
+            mode='ratio', copy=False, verbose=2)
 
     return power
 
+def psd_extractor_v2(neural_data, psd_config, index_baselines, type='power'):
+    info = create_info(ch_names=psd_config['chnls'], sfreq=psd_config['sampling_freq'], ch_types='misc', verbose=0)
+    epochs = EpochsArray(data=neural_data, info=info, verbose=0)
+    for ii_fb in range(len(psd_config['FreqBands'])):
+        sig_filt = filter_signal(neural_data.squeeze(), psd_config['sampling_freq'], 'bandpass', [psd_config['FreqBands'][ii_fb][0],
+                                                                                psd_config['FreqBands'][ii_fb][1]])
+        sig_filt = np.nan_to_num(sig_filt)
+        analytic_signal = hilbert(sig_filt)
+        amplitude_envelope = np.abs(analytic_signal)
+        if ii_fb ==0:
+            all=np.expand_dims(amplitude_envelope, axis=1)
+        else:
+            all=np.concatenate([all,np.expand_dims(amplitude_envelope, axis=1)],axis=1)
+    if len(index_baselines )>0:
+        all = rescale(all, epochs.times, (
+        np.min(index_baselines) / psd_config['sampling_freq'], np.max(index_baselines) / psd_config['sampling_freq']),
+                        mode='zscore', copy=False, verbose=2)
+    # for ii_chn in range(all.shape[0]):
+    #     for ii_band in range(all.shape[1]):
+    #         all[ii_chn,ii_band,:]=(all[ii_chn,ii_band,:]-np.nanmean(all[ii_chn,ii_band,index_baselines]))/np.nanstd(all[ii_chn,ii_band,index_baselines])
+    return all
 
 def feature_mapping(neural_features, psd_config):
 
@@ -112,7 +143,7 @@ def feature_mapping(neural_features, psd_config):
 
     if psd_config["avg_freq_bands"]:
         for ii in range(len(frequency_bands)):
-            temp[:, ii, :] = np.median(
+            temp[:, ii, :] = np.nanmean(
                 neural_features[:, np.where((freqs >= frequency_bands[ii][0]) &
                                             ((freqs < frequency_bands[ii][1])))[0], :],  axis=1)
         new_neural_features = temp
@@ -156,7 +187,7 @@ def calDesignMatrix_V3(X,h):
          XDsgn[i, : , :, :]= (PadX[i:h+i, :, :])
     return XDsgn
 
-def calDesignMatrix_V4(X,h, f):
+def calDesignMatrix_V4(X,h, f,d_sample):
     '''
     h history and f future
  design matrix with keep features orders
@@ -165,13 +196,19 @@ def calDesignMatrix_V4(X,h, f):
     :return: [samples*hist*Feature]
 
     '''
+    indx_d=np.arange(0,h+f+1,d_sample)
+    # window=np.zeros([f+h, X.shape[1], X.shape[2]])
+    # for ii in range(X.shape[1]):
+    #     for jj in range(X.shape[2]):
+    #         window[:,ii,jj]=np.ones((f+h,))/(f+h)
 
     PadX_h = np.zeros([h, X.shape[1], X.shape[2]])
     PadX_f =np.zeros([f, X.shape[1], X.shape[2]])
     PadX =np.concatenate([PadX_h,X, PadX_f],axis=0)
-    XDsgn=np.zeros([X.shape[0], f+h, X.shape[1], X.shape[2]])
+    XDsgn=np.zeros([X.shape[0], len(indx_d), X.shape[1], X.shape[2]])
     # print(PadX.shapepe)
-    for i in range(0, XDsgn.shape[0]):
-         #print(i)
-         XDsgn[i, :, :, :] = (PadX[i:f+h+i, :, :])
+    for i in range(h, XDsgn.shape[0]):
+
+        XDsgn[i-h, :, :, :] = PadX[i-h:f+i, :, :][indx_d]
+
     return XDsgn
