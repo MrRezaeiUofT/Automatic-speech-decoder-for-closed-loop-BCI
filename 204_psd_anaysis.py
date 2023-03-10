@@ -16,9 +16,9 @@ epsilon = 1e-5
 config_bs = {
         'decode_length': len(np.arange(0,h_k+1+f_k,d_sample)),
     }
-kernel_pca_comp = 100
-patient_id = 'DM1005'
-raw_denoised = 'denoised'
+kernel_pca_comp = 20
+patient_id = 'DM1007'
+raw_denoised = 'raw'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 save_result_path = datasets_add + patient_id + '/Results_'+raw_denoised+'/' +'phonems_psd/'
@@ -107,12 +107,13 @@ undersample = RandomUnderSampler()
 for jj in range(corr.shape[1]):
     print(jj)
 
-    inputs = X[:,jj,:].dot(bsp_w).reshape([X.shape[0], -1])
+    inputs = X[:,jj,:].squeeze()
     scaler = StandardScaler()
     inputs=scaler.fit_transform(inputs)
+
+    Kernel_pca = KernelPCA(n_components=kernel_pca_comp, kernel="rbf")
+    inputs = Kernel_pca.fit_transform(inputs)
     inputs_over, y_train_over = oversample.fit_resample(inputs, y_true)
-    # Kernel_pca = KernelPCA(n_components=kernel_pca_comp, kernel="rbf")
-    # inputs = Kernel_pca.fit_transform(inputs)
     inputs=(inputs-np.nanmin(inputs))/((np.nanmax(inputs)-np.nanmin(inputs)+1e-6))
     clf = LogisticRegression( solver='saga',class_weight='balanced', random_state=0).fit(inputs_over, y_train_over)
     y_hat_p = clf.predict_proba(inputs)
@@ -210,14 +211,16 @@ if True:
             chan_id = np.where(corr[phoneme_id, :, 0] == max_encoding)[0][0]
             # for chan_id in range(corr.shape[1]):
             if True:
-                all_sign= X[np.where(y_true == y_true_uniques[phoneme_id])[0],chan_id, : ].squeeze()
+                phone_ins=np.where(y_true == y_true_uniques[phoneme_id])[0]
+                all_sign= X[phone_ins,chan_id, : ].squeeze()
 
                 # all_sign = (all_sign -np.nanmin(all_sign,axis=0)) / (np.nanmax(all_sign,axis=0) - np.nanmin(all_sign,axis=0))
                 mean_sig = all_sign.mean(axis=0)
                 std_sig = all_sign.std(axis=0)
                 plt.figure()
                 xs_id=np.arange(-h_k,f_k+1, d_sample)
-                plt.fill_between(xs_id, (mean_sig - 1/np.sqrt(mean_sig.shape[0]) * np.sqrt(std_sig)).squeeze(), (mean_sig + 1/np.sqrt(mean_sig.shape[0]) * np.sqrt(std_sig)).squeeze(),
+                plt.fill_between(xs_id, (mean_sig - 1/np.sqrt(len(phone_ins)) * np.sqrt(std_sig)).squeeze(),
+                                 (mean_sig + 1/np.sqrt(len(phone_ins)) * np.sqrt(std_sig)).squeeze(),
                                  color='k',
                                  label='HI-DGD 95%', alpha=.5)
                 plt.plot(xs_id, mean_sig, 'k', label='mean')
@@ -238,25 +241,27 @@ if True:
         if max_encoding > 1/labels_ytick.shape[0]:
 
             chan_id = np.where(corr[phoneme_id, :, 0] == max_encoding)[0][0]
-            all_sign_org = X[np.where(y_true == y_true_uniques[phoneme_id])[0], chan_id, :].squeeze()
+            phone_ins = np.where(y_true == y_true_uniques[phoneme_id])[0]
+            all_sign_org = X[phone_ins, chan_id, :].squeeze()
             mean_sig_org = all_sign_org.mean(axis=0)
             std_sig_org = all_sign_org.std(axis=0)
 
             for phoneme_id_new in range(labels_ytick.shape[0]):
-                all_sign= X[np.where(y_true == y_true_uniques[phoneme_id_new])[0],chan_id, : ].squeeze()
+                phone_ins_new=np.where(y_true == y_true_uniques[phoneme_id_new])[0]
+                all_sign= X[phone_ins_new,chan_id, : ].squeeze()
                 mean_sig = all_sign.mean(axis=0)
                 std_sig = all_sign.std(axis=0)
                 xs_id=np.arange(-h_k,f_k+1, d_sample)
                 ax[phoneme_id_new//2,phoneme_id_new%2].axvline(x=xs_id[h_k // d_sample], color='r', label='onset')
                 if phoneme_id_new != phoneme_id:
                     ax[phoneme_id_new // 2, phoneme_id_new % 2].plot(xs_id, mean_sig, 'k', alpha=.2)
-                    ax[phoneme_id_new // 2, phoneme_id_new % 2].fill_between(xs_id, (mean_sig - 1 / np.sqrt(mean_sig.shape[0]) * np.sqrt(std_sig)).squeeze(),
-                                     (mean_sig + 1 / np.sqrt(mean_sig.shape[0]) * np.sqrt(std_sig)).squeeze(),
+                    ax[phoneme_id_new // 2, phoneme_id_new % 2].fill_between(xs_id, (mean_sig - 1 / np.sqrt(len(phone_ins_new)) * np.sqrt(std_sig)).squeeze(),
+                                     (mean_sig + 1 / np.sqrt(len(phone_ins_new)) * np.sqrt(std_sig)).squeeze(),
                                      color='k',
                                      label='HI-DGD 95%', alpha=.5)
 
-                ax[phoneme_id_new // 2, phoneme_id_new % 2].fill_between(xs_id, (mean_sig_org - 1 / np.sqrt(mean_sig_org.shape[0]) * np.sqrt(std_sig_org)).squeeze(),
-                                     (mean_sig_org + 1 / np.sqrt(mean_sig_org.shape[0]) * np.sqrt(std_sig_org)).squeeze(),
+                ax[phoneme_id_new // 2, phoneme_id_new % 2].fill_between(xs_id, (mean_sig_org - 1 / np.sqrt(len(phone_ins)) * np.sqrt(std_sig_org)).squeeze(),
+                                     (mean_sig_org + 1 / np.sqrt(len(phone_ins)) * np.sqrt(std_sig_org)).squeeze(),
                                      color='b',
                                      label='HI-DGD 95%', alpha=.5)
                 ax[phoneme_id_new // 2, phoneme_id_new % 2].plot(xs_id, mean_sig_org, 'b', label='mean')
@@ -282,8 +287,8 @@ if True:
             X_embedded_ch = KernelPCA(n_components=10, kernel='linear').fit_transform(X[:,chan_id,:])
             plt.figure()
             for phoneme_id_new in range(labels_ytick.shape[0]):
-
-                all_sign= X_embedded_ch[np.where(y_true == y_true_uniques[phoneme_id_new])[0], : ].squeeze()
+                phone_ins=np.where(y_true == y_true_uniques[phoneme_id_new])[0]
+                all_sign= X_embedded_ch[phone_ins, : ].squeeze()
 
                 if phoneme_id_new != phoneme_id:
                     plt.scatter(all_sign[:,0].squeeze(), all_sign[:,1].squeeze(), marker='o', c='k', alpha=.5)

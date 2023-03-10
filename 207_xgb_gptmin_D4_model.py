@@ -23,8 +23,8 @@ config_bs = {
         'decode_length': len(np.arange(0,h_k+1+f_k,d_sample)),
     }
 kernel_pca_comp = 3
-patient_id = 'DM1005'
-raw_denoised = 'denoised'
+patient_id = 'DM1007'
+raw_denoised = 'raw'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 save_result_path = datasets_add + patient_id + '/Results_'+raw_denoised+'/' +'phonems_psd/'
@@ -75,7 +75,7 @@ for ii_ch in range(X.shape[1]):
     Kernel_pca = KernelPCA(n_components=kernel_pca_comp, kernel="rbf")
     pcas.append(Kernel_pca)
     X_new[:,ii_ch,:] = Kernel_pca.fit_transform(X[:,ii_ch,:])
-X=X_new.reshape([X_new.shape[0],-1])
+X=X_new.reshape([X_new.shape[0],X_new.shape[1]*X_new.shape[2]])
 y_true = np.argmax(y_onehot, axis=-1)
 ''' clustering the neural features indexes according to phonemes clusters  '''
 if clustering_phonemes:

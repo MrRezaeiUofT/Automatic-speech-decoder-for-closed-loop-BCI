@@ -34,7 +34,7 @@ def get_psd_features(total_data_df, psd_config, patient_id, saving_add):
             temp_af = np.arange(trial_df.shape[0]- 1, trial_df.shape[0] - 1 - margin_length, -1)
             drop_indx = np.concatenate([drop_indx, temp_af], axis=0)
             neural_data = np.expand_dims(np.transpose(trial_df[psd_config['chnls']].to_numpy()), axis=0)
-            neural_psd = psd_extractor(neural_data, psd_config, np.arange(0, len(indx_baselines)), type='power')
+            neural_psd, freqs = psd_extractor(neural_data, psd_config, np.arange(0, len(indx_baselines)), type='power')
         elif trial == total_data_df.trial_id.unique()[-1]:
             indx_df = total_data_df.loc[
                 (total_data_df.trial_id == trial) | (total_data_df.baseline_flag == trial)].index
@@ -54,7 +54,7 @@ def get_psd_features(total_data_df, psd_config, patient_id, saving_add):
             temp_bf = np.arange(0, margin_length)
             drop_indx = np.concatenate([temp_bf, drop_indx], axis=0)
             neural_data = np.expand_dims(np.transpose(trial_df[psd_config['chnls']].to_numpy()), axis=0)
-            neural_psd = psd_extractor(neural_data, psd_config,  np.arange(margin_length, len(indx_baselines) + margin_length), type='power')
+            neural_psd, freqs = psd_extractor(neural_data, psd_config,  np.arange(margin_length, len(indx_baselines) + margin_length), type='power')
 
         else:
             indx_df = total_data_df.loc[(total_data_df.trial_id == trial) | (total_data_df.baseline_flag == trial)].index
@@ -72,7 +72,7 @@ def get_psd_features(total_data_df, psd_config, patient_id, saving_add):
             drop_indx = np.concatenate([temp_bf, drop_indx, temp_af])
 
             neural_data = np.expand_dims(np.transpose(trial_df[psd_config['chnls']].to_numpy()), axis=0)
-            neural_psd = psd_extractor(neural_data, psd_config,  np.arange(margin_length, len(indx_baselines) + margin_length), type='power')
+            neural_psd, freqs = psd_extractor(neural_data, psd_config,  np.arange(margin_length, len(indx_baselines) + margin_length), type='power')
             # Baseline the output
 
 
@@ -84,7 +84,7 @@ def get_psd_features(total_data_df, psd_config, patient_id, saving_add):
                 for jj in range(neural_psd.shape[1]):
                     neural_psd[ii, jj, :] = np.convolve(neural_psd[ii, jj, :], window, 'same')
         if psd_config['avg_freq_bands']:
-            neural_psd_band, freqs = feature_mapping(neural_psd, psd_config)
+            neural_psd_band, freqs = feature_mapping(neural_psd, psd_config,freqs)
         else:
             neural_psd_band=neural_psd
             freqs=1
@@ -102,8 +102,8 @@ def get_psd_features(total_data_df, psd_config, patient_id, saving_add):
 
 
 def psd_extractor(neural_data, psd_config, index_baselines, type='power'):
-    freqs = np.arange(psd_config['L_cut_freq'], psd_config['H_cut_freq'], psd_config['freq_stp'])
-    n_cycles = 25
+    freqs = np.round(np.logspace(np.log10(psd_config['L_cut_freq']),np.log10(psd_config['H_cut_freq']),psd_config['numb_freq'])).astype('int')
+    n_cycles = psd_config['L_cut_freq']
     info = create_info(ch_names=psd_config['chnls'], sfreq=psd_config['sampling_freq'], ch_types='misc', verbose=0)
     epochs = EpochsArray(data=neural_data, info=info, verbose=0)
     if type == 'power':
@@ -113,7 +113,7 @@ def psd_extractor(neural_data, psd_config, index_baselines, type='power'):
             power=rescale(power, epochs.times, (np.min(index_baselines) / psd_config['sampling_freq'], np.max(index_baselines) / psd_config['sampling_freq']),
             mode='zscore', copy=False, verbose=2)
 
-    return power
+    return power,freqs
 
 def psd_extractor_v2(neural_data, psd_config, index_baselines, type='power'):
     info = create_info(ch_names=psd_config['chnls'], sfreq=psd_config['sampling_freq'], ch_types='misc', verbose=0)
@@ -137,11 +137,11 @@ def psd_extractor_v2(neural_data, psd_config, index_baselines, type='power'):
     #         all[ii_chn,ii_band,:]=(all[ii_chn,ii_band,:]-np.nanmean(all[ii_chn,ii_band,index_baselines]))/np.nanstd(all[ii_chn,ii_band,index_baselines])
     return all
 
-def feature_mapping(neural_features, psd_config):
+def feature_mapping(neural_features, psd_config,freqs):
 
     frequency_bands = psd_config['FreqBands']
     # list of frequencies for extracting power
-    freqs = np.arange(psd_config['L_cut_freq'], psd_config['H_cut_freq'], psd_config['freq_stp'])
+
     temp = np.zeros((neural_features.shape[0], len(frequency_bands), neural_features.shape[2]))
 
     if psd_config["avg_freq_bands"]:

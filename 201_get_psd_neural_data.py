@@ -15,7 +15,7 @@ total_data = pd.read_csv(data_add + 'prepro_phoneme_neural_total_v1_'+raw_denois
 # total_data =total_data.drop(total_data[total_data.phoneme == 'sp'].index)
 # time frequency neural features
 list_ECOG_chn = total_data.columns[total_data.columns.str.contains("ecog")].to_list()
-frequency_bands = [[30, 50], [70,110],[130, 170]]
+frequency_bands = [[50, 60], [70,110],[130, 170]]
 
 psd_config={
     'chnls': list_ECOG_chn,
@@ -23,11 +23,11 @@ psd_config={
     'sampling_freq': 1000//dataset_info['dt'],
     'margin_length': 500//dataset_info['dt'],
 
-    'freq_stp': 1,
-    'L_cut_freq': 30,
+    'numb_freq': 100,
+    'L_cut_freq': 50,
     'H_cut_freq': 170,
     'avg_freq_bands': True,
-    'smoothing': False,
+    'smoothing': True,
     'smoothing_window_size': 10,
      }
 
