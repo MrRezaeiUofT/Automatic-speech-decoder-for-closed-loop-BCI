@@ -1,8 +1,8 @@
 from data_utilities import *
 import json
 
-patient_id = 'DM1003'
-raw_denoised = 'denoised'
+patient_id = 'DM1007'
+raw_denoised = 'raw'
 datasets_add = './Datasets/'
 
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'

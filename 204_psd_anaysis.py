@@ -5,17 +5,20 @@ from sklearn.linear_model import LogisticRegression
 
 import matplotlib.pyplot as plt
 from sklearn.decomposition import KernelPCA
-h_k = 2000
-f_k=2000
-d_sample = 10
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from sklearn.metrics import confusion_matrix
+
+h_k = 200
+f_k=200
+d_sample = 1
 count_phoneme_thr = 50
 epsilon = 1e-5
 config_bs = {
         'decode_length': len(np.arange(0,h_k+1+f_k,d_sample)),
     }
 kernel_pca_comp = 100
-patient_id = 'DM1013'
-raw_denoised = 'raw'
+patient_id = 'DM1005'
+raw_denoised = 'denoised'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 save_result_path = datasets_add + patient_id + '/Results_'+raw_denoised+'/' +'phonems_psd/'
@@ -56,10 +59,16 @@ for trial in trials_id[1:]:
 
 
 
-X = np.swapaxes(XDesign_total, -3, -1).squeeze() [:,:,-1,:]##
-X = np.nan_to_num(X)
+X = np.mean(np.swapaxes(XDesign_total, -3, -1).squeeze() [:,:,-2:,:],axis=2)##
+# X =np.swapaxes(XDesign_total, -3, -1).squeeze() [:,:,-1,:]
+# X = np.nan_to_num(X)
 bsp_w = bspline_window(config_bs)[:,1:-1]
 y_true = np.argmax(y_tri_total,axis=-1)
+plt.figure()
+plt.plot(bsp_w[:,1:-1])
+plt.savefig(save_result_path+'spline_basis.png')
+plt.savefig(save_result_path+'spline_basis.svg',  format='svg')
+
 ''' clustering the neural features indexes according to phonemes clusters  '''
 if clustering_phonemes:
     clr = 'clustering_' + str(clustering_phonemes_id)
@@ -70,28 +79,49 @@ else:
 ''' delete infrequent phonemes'''
 uniques_y_true, counts_y_true = np.unique(y_true, return_counts=True)
 phoneme_id_to_delete = uniques_y_true[np.where(counts_y_true<count_phoneme_thr)[0]]
-for ii_di in range(len(phoneme_id_to_delete)):
-    if ii_di == 0:
-        index_to_delete = np.where(y_true == phoneme_id_to_delete[ii_di])[0]
-    else:
-        index_to_delete = np.concatenate([index_to_delete, np.where(y_true == phoneme_id_to_delete[ii_di])[0]], axis=0)
-y_true = np.delete(y_true,index_to_delete, axis=0)
-X = np.delete(X,index_to_delete, axis=0)
-
+if len(phoneme_id_to_delete)>0:
+    for ii_di in range(len(phoneme_id_to_delete)):
+        if ii_di == 0:
+            index_to_delete = np.where(y_true == phoneme_id_to_delete[ii_di])[0]
+        else:
+            index_to_delete = np.concatenate([index_to_delete, np.where(y_true == phoneme_id_to_delete[ii_di])[0]], axis=0)
+    y_true = np.delete(y_true,index_to_delete, axis=0)
+    X = np.delete(X,index_to_delete, axis=0)
+''' Data standard'''
+# X[:,np.unique(np.where(X>1e2)[1]),:]=0
+# for ii_ch in range(X.shape[1]):
+#
+#     X[:,ii_ch,:]=scaler.fit_transform(X[:,ii_ch,:])
+''' reindex the target values to local indexes'''
+from sklearn.metrics import classification_report
+unique_vals_y= np.unique(y_true)
+y_reindexed = np.zeros_like(y_true)
+for count, value in enumerate(unique_vals_y):
+    y_reindexed[np.where(y_true == value)[0]] = count
+y_true=y_reindexed
 corr = np.zeros((np.unique(y_true).shape[0],X.shape[-2],3))
-
+from imblearn.under_sampling import RandomUnderSampler
+from imblearn.over_sampling import SMOTE
+oversample = SMOTE()
+undersample = RandomUnderSampler()
 for jj in range(corr.shape[1]):
+    print(jj)
+
     inputs = X[:,jj,:].dot(bsp_w).reshape([X.shape[0], -1])
+    scaler = StandardScaler()
+    inputs=scaler.fit_transform(inputs)
+    inputs_over, y_train_over = oversample.fit_resample(inputs, y_true)
     # Kernel_pca = KernelPCA(n_components=kernel_pca_comp, kernel="rbf")
     # inputs = Kernel_pca.fit_transform(inputs)
+    inputs=(inputs-np.nanmin(inputs))/((np.nanmax(inputs)-np.nanmin(inputs)+1e-6))
+    clf = LogisticRegression( solver='saga',class_weight='balanced', random_state=0).fit(inputs_over, y_train_over)
+    y_hat_p = clf.predict_proba(inputs)
+    y_hat=clf.predict(inputs)
+    temp=np.float64(confusion_matrix(y_true, y_hat))
 
-    clf = LogisticRegression(penalty = 'l2', solver='liblinear',class_weight='balanced', random_state=0).fit(inputs, y_true)
-    y_hat = clf.predict_proba(inputs)
-    temp_mean= np.mean(y_hat,axis=0)
-    temp_mean[temp_mean<= 1/corr.shape[0]] = 0
-    temp_max=np.max(y_hat, axis=0)
+    temp_max=np.max(y_hat_p, axis=0)
     temp_max[temp_max<= 1/corr.shape[0]] = 0
-    corr[:,jj,0] = temp_mean
+    corr[:,jj,0] = temp.diagonal()/temp.sum(axis=1)
     corr[:, jj,1] = temp_max
     corr[:, jj, 2] = np.max(np.abs(clf.coef_), axis=1).squeeze()
 
@@ -170,27 +200,130 @@ plt.savefig(save_result_path+'max-mean_encoding_weight_summary.png')
 plt.savefig(save_result_path+'max-mean_encoding_weight_summary.svg',  format='svg')
 
 ### find the most representetive channels and use it for psd analysis
-from sklearn import preprocessing
-y_true_uniques=np.unique(y_true)
-for phoneme_id in range(labels_ytick.shape[0]):
-    max_encoding=corr[phoneme_id, :, 0].max()
-    if max_encoding > 1/labels_ytick.shape[0]:
-        chan_id = np.where(corr[phoneme_id, :, 0] == max_encoding)[0]
-        all_sign= X[np.where(y_true == y_true_uniques[phoneme_id])[0],chan_id[0], : ].squeeze()
-        scaler=preprocessing.MinMaxScaler()
-        all_sign = scaler.fit_transform(all_sign)
-        mean_sig = all_sign.mean(axis=0)
-        std_sig = all_sign.std(axis=0)
-        plt.figure()
-        xs_id=np.arange(-h_k,f_k+1, d_sample)
-        plt.fill_between(xs_id, (mean_sig - .1 * np.sqrt(std_sig)).squeeze(), (mean_sig + 0.1 * np.sqrt(std_sig)).squeeze(),
-                         color='k',
-                         label='HI-DGD 95%', alpha=.5)
-        plt.plot(xs_id, mean_sig, 'k', label='mean')
-        plt.axvline(x=xs_id[h_k//d_sample], color='r', label='onset')
-        plt.title('Encoding-chn-'+str(chan_id[0])+'-'+ labels_ytick[phoneme_id]+'-'+ patient_id+'-maxEncoding-'+str(max_encoding))
-        plt.legend()
+# for chan_id in [101, 116,136,137,151,210,246]:
+if True:
+    y_true_uniques=np.unique(y_true)
+    for phoneme_id in range(labels_ytick.shape[0]):
+        max_encoding=corr[phoneme_id, :, 0].max()
+        if max_encoding > 1/labels_ytick.shape[0]:
 
-        plt.savefig(save_result_path + 'Encoding-chn-'+str(chan_id[0])+'-'+ labels_ytick[phoneme_id]+'.png')
-        plt.savefig(save_result_path + 'Encoding-chn-'+str(chan_id[0])+'-'+ labels_ytick[phoneme_id]+'.svg', format='svg')
+            chan_id = np.where(corr[phoneme_id, :, 0] == max_encoding)[0][0]
+            # for chan_id in range(corr.shape[1]):
+            if True:
+                all_sign= X[np.where(y_true == y_true_uniques[phoneme_id])[0],chan_id, : ].squeeze()
+
+                # all_sign = (all_sign -np.nanmin(all_sign,axis=0)) / (np.nanmax(all_sign,axis=0) - np.nanmin(all_sign,axis=0))
+                mean_sig = all_sign.mean(axis=0)
+                std_sig = all_sign.std(axis=0)
+                plt.figure()
+                xs_id=np.arange(-h_k,f_k+1, d_sample)
+                plt.fill_between(xs_id, (mean_sig - 1/np.sqrt(mean_sig.shape[0]) * np.sqrt(std_sig)).squeeze(), (mean_sig + 1/np.sqrt(mean_sig.shape[0]) * np.sqrt(std_sig)).squeeze(),
+                                 color='k',
+                                 label='HI-DGD 95%', alpha=.5)
+                plt.plot(xs_id, mean_sig, 'k', label='mean')
+                # plt.plot(xs_id, all_sign[np.random.randint(0,all_sign.shape[0],5),:].transpose())
+                plt.axvline(x=xs_id[h_k//d_sample], color='r', label='onset')
+                plt.title('Encoding-chn-'+str(chan_id)+'-'+ labels_ytick[phoneme_id]+'-'+ patient_id+'-maxEncoding-'+str(max_encoding))
+                # plt.legend()
+
+                plt.savefig(save_result_path + 'Encoding-chn-'+str(chan_id)+'-'+ labels_ytick[phoneme_id]+'.png')
+                plt.savefig(save_result_path + 'Encoding-chn-'+str(chan_id)+'-'+ labels_ytick[phoneme_id]+'.svg', format='svg')
+                plt.close()
+
+    ''' Difference for all channels'''
+
+    for phoneme_id in range(labels_ytick.shape[0]):
+        fig, ax =plt.subplots(7, 2,figsize=(10,16), sharex='col')
+        max_encoding=corr[phoneme_id, :, 0].max()
+        if max_encoding > 1/labels_ytick.shape[0]:
+
+            chan_id = np.where(corr[phoneme_id, :, 0] == max_encoding)[0][0]
+            all_sign_org = X[np.where(y_true == y_true_uniques[phoneme_id])[0], chan_id, :].squeeze()
+            mean_sig_org = all_sign_org.mean(axis=0)
+            std_sig_org = all_sign_org.std(axis=0)
+
+            for phoneme_id_new in range(labels_ytick.shape[0]):
+                all_sign= X[np.where(y_true == y_true_uniques[phoneme_id_new])[0],chan_id, : ].squeeze()
+                mean_sig = all_sign.mean(axis=0)
+                std_sig = all_sign.std(axis=0)
+                xs_id=np.arange(-h_k,f_k+1, d_sample)
+                ax[phoneme_id_new//2,phoneme_id_new%2].axvline(x=xs_id[h_k // d_sample], color='r', label='onset')
+                if phoneme_id_new != phoneme_id:
+                    ax[phoneme_id_new // 2, phoneme_id_new % 2].plot(xs_id, mean_sig, 'k', alpha=.2)
+                    ax[phoneme_id_new // 2, phoneme_id_new % 2].fill_between(xs_id, (mean_sig - 1 / np.sqrt(mean_sig.shape[0]) * np.sqrt(std_sig)).squeeze(),
+                                     (mean_sig + 1 / np.sqrt(mean_sig.shape[0]) * np.sqrt(std_sig)).squeeze(),
+                                     color='k',
+                                     label='HI-DGD 95%', alpha=.5)
+
+                ax[phoneme_id_new // 2, phoneme_id_new % 2].fill_between(xs_id, (mean_sig_org - 1 / np.sqrt(mean_sig_org.shape[0]) * np.sqrt(std_sig_org)).squeeze(),
+                                     (mean_sig_org + 1 / np.sqrt(mean_sig_org.shape[0]) * np.sqrt(std_sig_org)).squeeze(),
+                                     color='b',
+                                     label='HI-DGD 95%', alpha=.5)
+                ax[phoneme_id_new // 2, phoneme_id_new % 2].plot(xs_id, mean_sig_org, 'b', label='mean')
+                ax[phoneme_id_new // 2, phoneme_id_new % 2].set_title(labels_ytick[phoneme_id_new])
+
+
+            # plt.title('Cross-Encoding-chn-'+str(chan_id)+'-'+ labels_ytick[phoneme_id]+'-'+ patient_id+'-maxEncoding-'+str(max_encoding))
+            # plt.legend()
+
+        plt.savefig(save_result_path + 'Cross-Encoding-chn-'+str(chan_id)+'-'+ labels_ytick[phoneme_id]+'.png')
+        plt.savefig(save_result_path + 'Cross-Encoding-chn-'+str(chan_id)+'-'+ labels_ytick[phoneme_id]+'.svg', format='svg')
         plt.close()
+
+    ''' Difference for all channels PCA'''
+    from sklearn.manifold import TSNE
+
+    from sklearn.decomposition import PCA, KernelPCA
+    for phoneme_id in range(labels_ytick.shape[0]):
+        max_encoding=corr[phoneme_id, :, 0].max()
+        if max_encoding > 1/labels_ytick.shape[0]:
+
+            chan_id = np.where(corr[phoneme_id, :, 0] == max_encoding)[0][0]
+            X_embedded_ch = KernelPCA(n_components=10, kernel='linear').fit_transform(X[:,chan_id,:])
+            plt.figure()
+            for phoneme_id_new in range(labels_ytick.shape[0]):
+
+                all_sign= X_embedded_ch[np.where(y_true == y_true_uniques[phoneme_id_new])[0], : ].squeeze()
+
+                if phoneme_id_new != phoneme_id:
+                    plt.scatter(all_sign[:,0].squeeze(), all_sign[:,1].squeeze(), marker='o', c='k', alpha=.5)
+                else:
+                    plt.scatter(all_sign[:,0].squeeze(), all_sign[:,1].squeeze(), marker='*', c='b', label='mean')
+
+
+
+            plt.title('TSNE-Encoding-chn-'+str(chan_id)+'-'+ labels_ytick[phoneme_id]+'-'+ patient_id+'-maxEncoding-'+str(max_encoding))
+            # plt.legend()
+
+            plt.savefig(save_result_path + 'TSNE-Encoding-chn-'+str(chan_id)+'-'+ labels_ytick[phoneme_id]+'.png')
+            plt.savefig(save_result_path + 'TSNE-Encoding-chn-'+str(chan_id)+'-'+ labels_ytick[phoneme_id]+'.svg', format='svg')
+            plt.close()
+''' Record weights of phonemes encoding for each channle'''
+
+np.save(save_result_path+'channel_encoding_weights.npy', corr)
+
+# ''' visualize all ECOGS psd for all phonemes'''
+# for chan_id in range(corr.shape[1]):
+#     fig, ax = plt.subplots(7, 2, figsize=(10, 16), sharex='col')
+#     for phoneme_id_new in range(labels_ytick.shape[0]):
+#
+#         all_sign = X[np.where(y_true == y_true_uniques[phoneme_id_new])[0], chan_id, :].squeeze()
+#         mean_sig = all_sign.mean(axis=0)
+#         std_sig = all_sign.std(axis=0)
+#         xs_id = np.arange(-h_k, f_k + 1, d_sample)
+#         ax[phoneme_id_new // 2, phoneme_id_new % 2].axvline(x=xs_id[h_k // d_sample], color='r', label='onset')
+#
+#         ax[phoneme_id_new // 2, phoneme_id_new % 2].fill_between(xs_id, (
+#                             mean_sig - 1 / np.sqrt(mean_sig.shape[0]) * np.sqrt(std_sig)).squeeze(),
+#                                                                          (mean_sig + 1 / np.sqrt(
+#                                                                              mean_sig.shape[0]) * np.sqrt(
+#                                                                              std_sig)).squeeze(),
+#                                                                          color='b',
+#                                                                          label='HI-DGD 95%', alpha=.5)
+#         ax[phoneme_id_new // 2, phoneme_id_new % 2].plot(xs_id, mean_sig, 'b', label='mean')
+#         ax[phoneme_id_new // 2, phoneme_id_new % 2].set_title(labels_ytick[phoneme_id_new]+'acc='+str(np.round(100* corr[phoneme_id_new,chan_id,0])))
+#
+#     plt.savefig(save_result_path+'/all_chn/' + 'Cross-Encoding-chn-' + str(chan_id) + '-' + labels_ytick[phoneme_id] + '.png')
+#     plt.savefig(save_result_path+'/all_chn/' + 'Cross-Encoding-chn-' + str(chan_id) + '-' + labels_ytick[phoneme_id] + '.svg',
+#                     format='svg')
+#     plt.close()

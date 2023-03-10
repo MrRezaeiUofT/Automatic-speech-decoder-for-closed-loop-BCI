@@ -5,12 +5,13 @@ from sklearn.linear_model import LogisticRegression
 from pathlib import Path
 import matplotlib.pyplot as plt
 
-patients_list = ['DM1005', 'DM1012']#, 'DM1008', 'DM1013']
-raw_denoised = 'denoised'
+patients_list = ['DM1005', 'DM1012', 'DM1008', 'DM1013','DM1007']
+raw_denoised = 'raw'
 datasets_add = './Datasets/'
 save_result_path = datasets_add  + '/Results_com/'
 phonemes = np.array(['UW', 'AH', 'IH', 'IY', 'AE', 'R', 'L', 'K', 'S', 'N', 'D', 'V',
        'B', 'DH'])
+# phonemes = np.array(['B', 'ER'])
 for i_phone in phonemes:
     for count, patient_id in enumerate(patients_list):
         data_add = datasets_add + patient_id + '/' + 'Results_'+raw_denoised+'/phonems_psd/vis_'+i_phone+'.txt'
