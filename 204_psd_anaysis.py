@@ -17,14 +17,14 @@ config_bs = {
         'decode_length': len(np.arange(0,h_k+1+f_k,d_sample)),
     }
 kernel_pca_comp = 20
-patient_id = 'DM1007'
+patient_id = 'DM1013'
 raw_denoised = 'raw'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 save_result_path = datasets_add + patient_id + '/Results_'+raw_denoised+'/' +'phonems_psd/'
 phonemes_dic_address = 'LM/phonemes_df_harvard_dataset_phonemes_dic.csv'
 phonemes_dataset_address = 'LM/our_phonemes_df.csv'
-clustering_phonemes = True
+clustering_phonemes = False
 clustering_phonemes_id = 1
 
 do_sample_langmodel = True
@@ -57,9 +57,18 @@ for trial in trials_id[1:]:
         first_y_tri = np.concatenate([first_y_tri,y_tri[0].reshape([1,-1])], axis=0)
         y_tri_total = np.concatenate([y_tri_total, y_tri], axis=0)
 
-
+''' read channles information'''
+import json
+saving_add = data_add +'/trials_'+raw_denoised+'/'
+f = open(saving_add + "neural_features_info.json")
+psd_config = json.load(f)
+list_ECOG_chn= psd_config['chnls']
+''' mask non informative chnl'''
+saved_result_path = datasets_add + patient_id + '/Results_'+raw_denoised+'/' +'phonems_psd/'
+non_inf_chnnel_id = np.load(saved_result_path + '/all_chn/no_inf_chnl.npy')
 
 X = np.mean(np.swapaxes(XDesign_total, -3, -1).squeeze() [:,:,-2:,:],axis=2)##
+X[:,non_inf_chnnel_id,:]=0
 # X =np.swapaxes(XDesign_total, -3, -1).squeeze() [:,:,-1,:]
 # X = np.nan_to_num(X)
 bsp_w = bspline_window(config_bs)[:,1:-1]
@@ -102,29 +111,33 @@ y_true=y_reindexed
 corr = np.zeros((np.unique(y_true).shape[0],X.shape[-2],3))
 from imblearn.under_sampling import RandomUnderSampler
 from imblearn.over_sampling import SMOTE
-oversample = SMOTE()
-undersample = RandomUnderSampler()
+
 for jj in range(corr.shape[1]):
-    print(jj)
+    if ~np.isin(jj, non_inf_chnnel_id):
+        print(jj)
 
-    inputs = X[:,jj,:].squeeze()
-    scaler = StandardScaler()
-    inputs=scaler.fit_transform(inputs)
+        inputs = X[:,jj,:].squeeze()
+        scaler = StandardScaler()
+        inputs=scaler.fit_transform(inputs)
 
-    Kernel_pca = KernelPCA(n_components=kernel_pca_comp, kernel="rbf")
-    inputs = Kernel_pca.fit_transform(inputs)
-    inputs_over, y_train_over = oversample.fit_resample(inputs, y_true)
-    inputs=(inputs-np.nanmin(inputs))/((np.nanmax(inputs)-np.nanmin(inputs)+1e-6))
-    clf = LogisticRegression( solver='saga',class_weight='balanced', random_state=0).fit(inputs_over, y_train_over)
-    y_hat_p = clf.predict_proba(inputs)
-    y_hat=clf.predict(inputs)
-    temp=np.float64(confusion_matrix(y_true, y_hat))
+        Kernel_pca = KernelPCA(n_components=kernel_pca_comp, kernel="linear")
+        inputs = Kernel_pca.fit_transform(inputs)
+        oversample = SMOTE()
+        undersample = RandomUnderSampler()
+        inputs_over, y_train_over = undersample.fit_resample(inputs, y_true)
+        inputs=(inputs-np.nanmean(inputs))/((np.nanstd(inputs)+1e-4))
+        clf = LogisticRegression( solver='saga',class_weight='balanced', random_state=0).fit(inputs_over, y_train_over)
+        y_hat_p = clf.predict_proba(inputs)
+        y_hat=clf.predict(inputs)
+        temp=np.float64(confusion_matrix(y_true, y_hat))
 
-    temp_max=np.max(y_hat_p, axis=0)
-    temp_max[temp_max<= 1/corr.shape[0]] = 0
-    corr[:,jj,0] = temp.diagonal()/temp.sum(axis=1)
-    corr[:, jj,1] = temp_max
-    corr[:, jj, 2] = np.max(np.abs(clf.coef_), axis=1).squeeze()
+        temp_max=np.max(y_hat_p, axis=0)
+        temp_max[temp_max<= 1/corr.shape[0]] = 0
+        corr[:,jj,0] = temp.diagonal()/temp.sum(axis=1)
+        corr[:, jj,1] = temp_max
+        corr[:, jj, 2] = np.max(np.abs(clf.coef_), axis=1).squeeze()
+    else:
+        pass
 
 ''' sort LFP channels'''
 chn_df = pd.read_csv( datasets_add + patient_id + '/sub-'+patient_id+'_electrodes.tsv', sep='\t')
@@ -200,11 +213,11 @@ plt.xticks(ticks=np.arange(len(labels_xtick_summary)), labels=np.array(labels_xt
 plt.savefig(save_result_path+'max-mean_encoding_weight_summary.png')
 plt.savefig(save_result_path+'max-mean_encoding_weight_summary.svg',  format='svg')
 
-### find the most representetive channels and use it for psd analysis
-# for chan_id in [101, 116,136,137,151,210,246]:
-if True:
-    y_true_uniques=np.unique(y_true)
-    for phoneme_id in range(labels_ytick.shape[0]):
+'''find the most representetive channels and use it for psd analysis'''
+
+
+y_true_uniques=np.unique(y_true)
+for phoneme_id in range(labels_ytick.shape[0]):
         max_encoding=corr[phoneme_id, :, 0].max()
         if max_encoding > 1/labels_ytick.shape[0]:
 
@@ -226,17 +239,17 @@ if True:
                 plt.plot(xs_id, mean_sig, 'k', label='mean')
                 # plt.plot(xs_id, all_sign[np.random.randint(0,all_sign.shape[0],5),:].transpose())
                 plt.axvline(x=xs_id[h_k//d_sample], color='r', label='onset')
-                plt.title('Encoding-chn-'+str(chan_id)+'-'+ labels_ytick[phoneme_id]+'-'+ patient_id+'-maxEncoding-'+str(max_encoding))
+                plt.title('Encoding-chn-'+list_ECOG_chn[chan_id]+'-'+ labels_ytick[phoneme_id]+'-'+ patient_id+'-maxEncoding-'+str(max_encoding))
                 # plt.legend()
 
-                plt.savefig(save_result_path + 'Encoding-chn-'+str(chan_id)+'-'+ labels_ytick[phoneme_id]+'.png')
-                plt.savefig(save_result_path + 'Encoding-chn-'+str(chan_id)+'-'+ labels_ytick[phoneme_id]+'.svg', format='svg')
+                plt.savefig(save_result_path + 'Encoding-chn-'+list_ECOG_chn[chan_id]+'-'+ labels_ytick[phoneme_id]+'.png')
+                plt.savefig(save_result_path + 'Encoding-chn-'+list_ECOG_chn[chan_id]+'-'+ labels_ytick[phoneme_id]+'.svg', format='svg')
                 plt.close()
 
-    ''' Difference for all channels'''
+''' Difference for all channels'''
 
-    for phoneme_id in range(labels_ytick.shape[0]):
-        fig, ax =plt.subplots(7, 2,figsize=(10,16), sharex='col')
+for phoneme_id in range(labels_ytick.shape[0]):
+        fig, ax =plt.subplots(labels_ytick.shape[0]//2+1, 2,figsize=(10,16), sharex='col')
         max_encoding=corr[phoneme_id, :, 0].max()
         if max_encoding > 1/labels_ytick.shape[0]:
 
@@ -268,18 +281,17 @@ if True:
                 ax[phoneme_id_new // 2, phoneme_id_new % 2].set_title(labels_ytick[phoneme_id_new])
 
 
-            # plt.title('Cross-Encoding-chn-'+str(chan_id)+'-'+ labels_ytick[phoneme_id]+'-'+ patient_id+'-maxEncoding-'+str(max_encoding))
-            # plt.legend()
 
-        plt.savefig(save_result_path + 'Cross-Encoding-chn-'+str(chan_id)+'-'+ labels_ytick[phoneme_id]+'.png')
-        plt.savefig(save_result_path + 'Cross-Encoding-chn-'+str(chan_id)+'-'+ labels_ytick[phoneme_id]+'.svg', format='svg')
+
+        plt.savefig(save_result_path + 'Cross-Encoding-chn-'+list_ECOG_chn[chan_id]+'-'+ labels_ytick[phoneme_id]+'.png')
+        plt.savefig(save_result_path + 'Cross-Encoding-chn-'+list_ECOG_chn[chan_id]+'-'+ labels_ytick[phoneme_id]+'.svg', format='svg')
         plt.close()
 
-    ''' Difference for all channels PCA'''
-    from sklearn.manifold import TSNE
+''' Difference for all channels PCA'''
+from sklearn.manifold import TSNE
 
-    from sklearn.decomposition import PCA, KernelPCA
-    for phoneme_id in range(labels_ytick.shape[0]):
+from sklearn.decomposition import PCA, KernelPCA
+for phoneme_id in range(labels_ytick.shape[0]):
         max_encoding=corr[phoneme_id, :, 0].max()
         if max_encoding > 1/labels_ytick.shape[0]:
 
@@ -297,17 +309,17 @@ if True:
 
 
 
-            plt.title('TSNE-Encoding-chn-'+str(chan_id)+'-'+ labels_ytick[phoneme_id]+'-'+ patient_id+'-maxEncoding-'+str(max_encoding))
+            plt.title('TSNE-Encoding-chn-'+list_ECOG_chn[chan_id]+'-'+ labels_ytick[phoneme_id]+'-'+ patient_id+'-maxEncoding-'+str(max_encoding))
             # plt.legend()
 
-            plt.savefig(save_result_path + 'TSNE-Encoding-chn-'+str(chan_id)+'-'+ labels_ytick[phoneme_id]+'.png')
-            plt.savefig(save_result_path + 'TSNE-Encoding-chn-'+str(chan_id)+'-'+ labels_ytick[phoneme_id]+'.svg', format='svg')
+            plt.savefig(save_result_path + 'TSNE-Encoding-chn-'+list_ECOG_chn[chan_id]+'-'+ labels_ytick[phoneme_id]+'.png')
+            plt.savefig(save_result_path + 'TSNE-Encoding-chn-'+list_ECOG_chn[chan_id]+'-'+ labels_ytick[phoneme_id]+'.svg', format='svg')
             plt.close()
-''' Record weights of phonemes encoding for each channle'''
+''' Record weights of phonemes encoding for each channel'''
 
 np.save(save_result_path+'channel_encoding_weights.npy', corr)
 
-# ''' visualize all ECOGS psd for all phonemes'''
+''' visualize all ECOGS psd for all phonemes'''
 # for chan_id in range(corr.shape[1]):
 #     fig, ax = plt.subplots(7, 2, figsize=(10, 16), sharex='col')
 #     for phoneme_id_new in range(labels_ytick.shape[0]):
@@ -328,7 +340,7 @@ np.save(save_result_path+'channel_encoding_weights.npy', corr)
 #         ax[phoneme_id_new // 2, phoneme_id_new % 2].plot(xs_id, mean_sig, 'b', label='mean')
 #         ax[phoneme_id_new // 2, phoneme_id_new % 2].set_title(labels_ytick[phoneme_id_new]+'acc='+str(np.round(100* corr[phoneme_id_new,chan_id,0])))
 #
-#     plt.savefig(save_result_path+'/all_chn/' + 'Cross-Encoding-chn-' + str(chan_id) + '-' + labels_ytick[phoneme_id] + '.png')
-#     plt.savefig(save_result_path+'/all_chn/' + 'Cross-Encoding-chn-' + str(chan_id) + '-' + labels_ytick[phoneme_id] + '.svg',
+#     plt.savefig(save_result_path+'/all_chn/' + 'Cross-Encoding-chn-' + list_ECOG_chn[chan_id] + '-' + labels_ytick[phoneme_id] + '.png')
+#     plt.savefig(save_result_path+'/all_chn/' + 'Cross-Encoding-chn-' + list_ECOG_chn[chan_id] + '-' + labels_ytick[phoneme_id] + '.svg',
 #                     format='svg')
 #     plt.close()

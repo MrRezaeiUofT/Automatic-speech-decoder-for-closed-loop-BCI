@@ -103,7 +103,7 @@ def get_psd_features(total_data_df, psd_config, patient_id, saving_add):
 
 def psd_extractor(neural_data, psd_config, index_baselines, type='power'):
     freqs = np.round(np.logspace(np.log10(psd_config['L_cut_freq']),np.log10(psd_config['H_cut_freq']),psd_config['numb_freq'])).astype('int')
-    n_cycles = psd_config['L_cut_freq']
+    n_cycles = freqs#psd_config['L_cut_freq']
     info = create_info(ch_names=psd_config['chnls'], sfreq=psd_config['sampling_freq'], ch_types='misc', verbose=0)
     epochs = EpochsArray(data=neural_data, info=info, verbose=0)
     if type == 'power':

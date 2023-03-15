@@ -5,7 +5,7 @@ from sklearn.linear_model import LogisticRegression
 from pathlib import Path
 import matplotlib.pyplot as plt
 
-patients_list = ['DM1005', 'DM1012', 'DM1008', 'DM1013','DM1007']
+patients_list = ['DM1005', 'DM1008', 'DM1013','DM1007']
 raw_denoised = 'raw'
 datasets_add = './Datasets/'
 save_result_path = datasets_add  + '/Results_com/'

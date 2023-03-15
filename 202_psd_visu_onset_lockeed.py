@@ -1,6 +1,6 @@
 from data_utilities import *
 import matplotlib.pyplot as plt
-patient_id = 'DM1007'
+patient_id = 'DM1013'
 raw_denoised = 'raw'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
@@ -37,11 +37,14 @@ for trial in trials_id:
 
 list_ECOG_chn = data_list_trial[1].columns[data_list_trial[1].columns.str.contains("ecog")].to_list()
 chnl_number=len(list_ECOG_chn)
+window_inf=800
+non_informative_chn_ids=[]
 for ii_chd in range(chnl_number):
     mean_sig = X_new[:,:,ii_chd].mean(axis=0)
     std_sig = X_new[:,:,ii_chd].std(axis=0)
     xs_id = np.arange(-margin_bf, window_after, 1)
     plt.figure()
+
     plt.axvline(x=xs_id[margin_bf], color='r', label='onset')
 
     plt.fill_between(xs_id, (
@@ -53,10 +56,21 @@ for ii_chd in range(chnl_number):
                                                              label='HI-DGD 95%', alpha=.5)
     plt.plot(xs_id, mean_sig, 'b', label='mean')
 
-
-    plt.savefig(
-        save_result_path + '/all_chn/' + 'Speach_onset_lock_gamma-' + list_ECOG_chn[ii_chd] + '.png')
-    plt.savefig(
-        save_result_path + '/all_chn/' + 'Speach_onset_lock_gamma-' + list_ECOG_chn[ii_chd] + '-'  + '.svg',
-        format='svg')
+    if ((np.nanmean(mean_sig[margin_bf:])<np.nanmean(mean_sig[:margin_bf]))
+            or (np.nanmax(np.abs(mean_sig))>200)
+            or (np.nanmin(np.abs(mean_sig))<1)):
+        non_informative_chn_ids.append(ii_chd)
+        plt.savefig(
+            save_result_path + '/all_chn/' + 'Speach_onset_lock_gamma-' + list_ECOG_chn[ii_chd] +'non-inf'+ '.png')
+        plt.savefig(
+            save_result_path + '/all_chn/' + 'Speach_onset_lock_gamma-' + list_ECOG_chn[ii_chd] + 'non-inf' + '.svg',
+            format='svg')
+    else:
+        plt.savefig(
+            save_result_path + '/all_chn/' + 'Speach_onset_lock_gamma-' + list_ECOG_chn[ii_chd] + 'inf'+'.png')
+        plt.savefig(
+            save_result_path + '/all_chn/' + 'Speach_onset_lock_gamma-' + list_ECOG_chn[ii_chd] + 'inf'+'.svg',
+            format='svg')
     plt.close()
+
+np.save(save_result_path + '/all_chn/''no_inf_chnl.npy',np.array(non_informative_chn_ids))

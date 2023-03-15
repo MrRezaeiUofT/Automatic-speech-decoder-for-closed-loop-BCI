@@ -1,7 +1,7 @@
 from data_utilities import *
 from neural_utils import *
 
-patient_id = 'DM1007'
+patient_id = 'DM1005'
 raw_denoised = 'raw'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
@@ -36,6 +36,6 @@ freqs = get_psd_features(total_data, psd_config, patient_id, saving_add)
 
 psd_config['freqs'] = freqs
 with open(saving_add + "neural_features_info.json", "w") as outfile:
-    json.dump(dataset_info, outfile)
+    json.dump(psd_config, outfile)
 
 
