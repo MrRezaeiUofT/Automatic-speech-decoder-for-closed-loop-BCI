@@ -13,10 +13,11 @@ f_k=200
 d_sample = 1
 count_phoneme_thr = 50
 epsilon = 1e-5
+kernel_pca_comp = 15
 config_bs = {
         'decode_length': len(np.arange(0,h_k+1+f_k,d_sample)),
     }
-kernel_pca_comp = 20
+
 patient_id = 'DM1013'
 raw_denoised = 'raw'
 datasets_add = './Datasets/'
@@ -24,10 +25,8 @@ data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 save_result_path = datasets_add + patient_id + '/Results_'+raw_denoised+'/' +'phonems_psd/'
 phonemes_dic_address = 'LM/phonemes_df_harvard_dataset_phonemes_dic.csv'
 phonemes_dataset_address = 'LM/our_phonemes_df.csv'
-clustering_phonemes = False
+clustering_phonemes = True
 clustering_phonemes_id = 1
-
-do_sample_langmodel = True
 trials_info_df=pd.read_csv(
         datasets_add + patient_id + '/' + 'sub-' + patient_id + '_ses-intraop_task-lombard_annot-produced-sentences.tsv',
         sep='\t')
@@ -71,12 +70,12 @@ X = np.mean(np.swapaxes(XDesign_total, -3, -1).squeeze() [:,:,-2:,:],axis=2)##
 X[:,non_inf_chnnel_id,:]=0
 # X =np.swapaxes(XDesign_total, -3, -1).squeeze() [:,:,-1,:]
 # X = np.nan_to_num(X)
-bsp_w = bspline_window(config_bs)[:,1:-1]
+# bsp_w = bspline_window(config_bs)[:,1:-1]
 y_true = np.argmax(y_tri_total,axis=-1)
-plt.figure()
-plt.plot(bsp_w[:,1:-1])
-plt.savefig(save_result_path+'spline_basis.png')
-plt.savefig(save_result_path+'spline_basis.svg',  format='svg')
+# plt.figure()
+# plt.plot(bsp_w[:,1:-1])
+# plt.savefig(save_result_path+'spline_basis.png')
+# plt.savefig(save_result_path+'spline_basis.svg',  format='svg')
 
 ''' clustering the neural features indexes according to phonemes clusters  '''
 if clustering_phonemes:
@@ -96,11 +95,7 @@ if len(phoneme_id_to_delete)>0:
             index_to_delete = np.concatenate([index_to_delete, np.where(y_true == phoneme_id_to_delete[ii_di])[0]], axis=0)
     y_true = np.delete(y_true,index_to_delete, axis=0)
     X = np.delete(X,index_to_delete, axis=0)
-''' Data standard'''
-# X[:,np.unique(np.where(X>1e2)[1]),:]=0
-# for ii_ch in range(X.shape[1]):
-#
-#     X[:,ii_ch,:]=scaler.fit_transform(X[:,ii_ch,:])
+
 ''' reindex the target values to local indexes'''
 from sklearn.metrics import classification_report
 unique_vals_y= np.unique(y_true)
@@ -117,16 +112,13 @@ for jj in range(corr.shape[1]):
         print(jj)
 
         inputs = X[:,jj,:].squeeze()
-        scaler = StandardScaler()
-        inputs=scaler.fit_transform(inputs)
 
-        Kernel_pca = KernelPCA(n_components=kernel_pca_comp, kernel="linear")
+
+        Kernel_pca = KernelPCA(n_components=kernel_pca_comp, kernel="rbf")
         inputs = Kernel_pca.fit_transform(inputs)
-        oversample = SMOTE()
-        undersample = RandomUnderSampler()
-        inputs_over, y_train_over = undersample.fit_resample(inputs, y_true)
-        inputs=(inputs-np.nanmean(inputs))/((np.nanstd(inputs)+1e-4))
-        clf = LogisticRegression( solver='saga',class_weight='balanced', random_state=0).fit(inputs_over, y_train_over)
+
+
+        clf = LogisticRegression( solver='lbfgs',class_weight='balanced', random_state=0).fit(inputs, y_true)
         y_hat_p = clf.predict_proba(inputs)
         y_hat=clf.predict(inputs)
         temp=np.float64(confusion_matrix(y_true, y_hat))
@@ -160,7 +152,7 @@ plt.xticks(ticks=np.arange(len(labels_xtick)), labels=np.array(labels_xtick), ro
 plt.savefig(save_result_path+'predic-phonemes-mean.png')
 plt.savefig(save_result_path+'predic-phonemes-mean.svg',  format='svg')
 
-""" saving for visualization"""
+""" saving for visualization with Surf Ice"""
 for i_phonemes in range(corr.shape[0]):
     vis_df= pd.DataFrame()
     vis_df['x'] = chn_df['mni_x']
@@ -172,8 +164,18 @@ for i_phonemes in range(corr.shape[0]):
     vis_df['size'][vis_df['size'] < 1/corr.shape[0]] = np.nan
     vis_df.to_csv(save_result_path + '/vis_' + labels_ytick[i_phonemes] + '.txt', sep='\t', index=False)
     vis_df.to_csv(save_result_path+'/vis_'+labels_ytick[i_phonemes]+'.node', sep='\t', index=False)
+    if i_phonemes==0:
+        vis_df_all = vis_df.copy()
+        vis_df_all['color'] = i_phonemes+1
+    else:
+        vis_df['color'] = i_phonemes + 1
+        vis_df_all=vis_df_all.append(vis_df, ignore_index=True)
 
-""""""
+
+vis_df_all.to_csv(save_result_path + '/vis_all.txt', sep='\t', index=False)
+vis_df_all.to_csv(save_result_path+'/vis_all.node', sep='\t', index=False)
+
+""" prediction result save visualization"""
 
 
 plt.figure(figsize=(20,10))
@@ -213,9 +215,9 @@ plt.xticks(ticks=np.arange(len(labels_xtick_summary)), labels=np.array(labels_xt
 plt.savefig(save_result_path+'max-mean_encoding_weight_summary.png')
 plt.savefig(save_result_path+'max-mean_encoding_weight_summary.svg',  format='svg')
 
+''' Record weights of phonemes encoding for each channel'''
+np.save(save_result_path+'channel_encoding_weights.npy', corr)
 '''find the most representetive channels and use it for psd analysis'''
-
-
 y_true_uniques=np.unique(y_true)
 for phoneme_id in range(labels_ytick.shape[0]):
         max_encoding=corr[phoneme_id, :, 0].max()
@@ -247,7 +249,6 @@ for phoneme_id in range(labels_ytick.shape[0]):
                 plt.close()
 
 ''' Difference for all channels'''
-
 for phoneme_id in range(labels_ytick.shape[0]):
         fig, ax =plt.subplots(labels_ytick.shape[0]//2+1, 2,figsize=(10,16), sharex='col')
         max_encoding=corr[phoneme_id, :, 0].max()
@@ -288,36 +289,33 @@ for phoneme_id in range(labels_ytick.shape[0]):
         plt.close()
 
 ''' Difference for all channels PCA'''
-from sklearn.manifold import TSNE
+# from sklearn.manifold import TSNE
+# from sklearn.decomposition import PCA, KernelPCA
+# for phoneme_id in range(labels_ytick.shape[0]):
+#         max_encoding=corr[phoneme_id, :, 0].max()
+#         if max_encoding > 1/labels_ytick.shape[0]:
+#
+#             chan_id = np.where(corr[phoneme_id, :, 0] == max_encoding)[0][0]
+#             X_embedded_ch = KernelPCA(n_components=10, kernel='linear').fit_transform(X[:,chan_id,:])
+#             plt.figure()
+#             for phoneme_id_new in range(labels_ytick.shape[0]):
+#                 phone_ins=np.where(y_true == y_true_uniques[phoneme_id_new])[0]
+#                 all_sign= X_embedded_ch[phone_ins, : ].squeeze()
+#
+#                 if phoneme_id_new != phoneme_id:
+#                     plt.scatter(all_sign[:,0].squeeze(), all_sign[:,1].squeeze(), marker='o', c='k', alpha=.5)
+#                 else:
+#                     plt.scatter(all_sign[:,0].squeeze(), all_sign[:,1].squeeze(), marker='*', c='b', label='mean')
+#
+#
+#
+#             plt.title('TSNE-Encoding-chn-'+list_ECOG_chn[chan_id]+'-'+ labels_ytick[phoneme_id]+'-'+ patient_id+'-maxEncoding-'+str(max_encoding))
+#             # plt.legend()
+#
+#             plt.savefig(save_result_path + 'TSNE-Encoding-chn-'+list_ECOG_chn[chan_id]+'-'+ labels_ytick[phoneme_id]+'.png')
+#             plt.savefig(save_result_path + 'TSNE-Encoding-chn-'+list_ECOG_chn[chan_id]+'-'+ labels_ytick[phoneme_id]+'.svg', format='svg')
+#             plt.close()
 
-from sklearn.decomposition import PCA, KernelPCA
-for phoneme_id in range(labels_ytick.shape[0]):
-        max_encoding=corr[phoneme_id, :, 0].max()
-        if max_encoding > 1/labels_ytick.shape[0]:
-
-            chan_id = np.where(corr[phoneme_id, :, 0] == max_encoding)[0][0]
-            X_embedded_ch = KernelPCA(n_components=10, kernel='linear').fit_transform(X[:,chan_id,:])
-            plt.figure()
-            for phoneme_id_new in range(labels_ytick.shape[0]):
-                phone_ins=np.where(y_true == y_true_uniques[phoneme_id_new])[0]
-                all_sign= X_embedded_ch[phone_ins, : ].squeeze()
-
-                if phoneme_id_new != phoneme_id:
-                    plt.scatter(all_sign[:,0].squeeze(), all_sign[:,1].squeeze(), marker='o', c='k', alpha=.5)
-                else:
-                    plt.scatter(all_sign[:,0].squeeze(), all_sign[:,1].squeeze(), marker='*', c='b', label='mean')
-
-
-
-            plt.title('TSNE-Encoding-chn-'+list_ECOG_chn[chan_id]+'-'+ labels_ytick[phoneme_id]+'-'+ patient_id+'-maxEncoding-'+str(max_encoding))
-            # plt.legend()
-
-            plt.savefig(save_result_path + 'TSNE-Encoding-chn-'+list_ECOG_chn[chan_id]+'-'+ labels_ytick[phoneme_id]+'.png')
-            plt.savefig(save_result_path + 'TSNE-Encoding-chn-'+list_ECOG_chn[chan_id]+'-'+ labels_ytick[phoneme_id]+'.svg', format='svg')
-            plt.close()
-''' Record weights of phonemes encoding for each channel'''
-
-np.save(save_result_path+'channel_encoding_weights.npy', corr)
 
 ''' visualize all ECOGS psd for all phonemes'''
 # for chan_id in range(corr.shape[1]):

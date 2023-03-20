@@ -1,123 +1,265 @@
 import torch
 import torch.nn as nn
-from neural_utils import  calDesignMatrix_V2, calDesignMatrix_V3, calDesignMatrix_V4
-import torch.nn.functional as F
+from sklearn.metrics import accuracy_score
 import numpy as np
-from sklearn.preprocessing import StandardScaler
-import pickle
-from torch.autograd import Variable
+
+import random
+from sklearn.metrics import confusion_matrix
+SEED = 1234
+
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+torch.cuda.manual_seed(SEED)
+torch.backends.cudnn.deterministic = True
+from torch.utils.data import Dataset
 
 
-class SimpleClassifier(nn.Module):
-    """
-    simple classifier
-    """
-    def __init__(self, Input_size, output_size, hidden_dim):
-        super(SimpleClassifier,  self).__init__()
-        # 1 input image channel, 6 output channels, 5x5 square convolution
-        # kernel
-        self.Input_size = Input_size
-        self.output_size = output_size
-        self.hidden_dim = hidden_dim
+class Encoder(nn.Module):
+    def __init__(self, input_dim, emb_dim, hid_dim, n_layers, dropout):
+        super().__init__()
 
-        self.fcin = nn.Linear(self.Input_size, self.hidden_dim)
-        self.fch = nn.Linear(self.hidden_dim, self.hidden_dim)
-        self.fout =nn.Linear(self.hidden_dim, self.output_size)
-
-    def forward(self, x):
-        # Max pooling over a (2, 2) window
-        x =  F.relu(self.fcin(x))
-        # If the size is a square, you can specify with a single number
-        x =  F.relu(self.fch(x))
-        x = F.relu(self.fch(x))
-        x = F.relu(self.fch(x))
-        x = self.fout(x)
-        x=torch.nn.functional.softmax(x, dim=1)
-        return x
-
-
-    def accuracy(self, out, labels):
-        _, pred = torch.max(out, dim=1)
-        return torch.sum(pred == labels).item()
-
-
-class RNN_Classifier(nn.Module):
-    """
-    simple classifier
-    """
-    def __init__(self, Input_size, history_length, output_size, hidden_dim, n_layers):
-        super(RNN_Classifier,  self).__init__()
-        # 1 input image channel, 6 output channels, 5x5 square convolution
-        # kernel
-        self.Input_size = Input_size
-        self.history_length = history_length
-        self.output_size = output_size
-        self.hidden_dim = hidden_dim
+        self.hid_dim = hid_dim
         self.n_layers = n_layers
 
-        self.rnn = nn.RNN(
-            self.Input_size, self.hidden_dim, self.n_layers, batch_first=True, dropout=.1
-        )
-        self.flatten = nn.Flatten()
-        self.softplus = nn.Softplus()
-        self.fin = nn.Linear(Input_size+self.hidden_dim, self.hidden_dim)
-        self.fch = nn.Linear(self.hidden_dim, self.hidden_dim)
-        self.fout = nn.Linear(self.hidden_dim, self.output_size)
+        # self.embedding = nn.Embedding(input_dim, emb_dim)
+        self.embedding = nn.Linear(input_dim, emb_dim)
+        self.mixer = nn.Linear(emb_dim, emb_dim)
+        self.rnn = nn.LSTM(emb_dim, hid_dim, n_layers, dropout=dropout)
 
-    def forward(self, x):
-        h0 = Variable(torch.randn(self.n_layers, x.shape[0], self.hidden_dim))
+        self.dropout = nn.Dropout(dropout)
 
-        out_h, hnh = self.rnn(x[:, :-1, :], h0)
-        x_embed = torch.cat((out_h[:,-1,:], torch.squeeze(x[:,-1,:])), -1)
-        x_embed = F.relu(self.fin(x_embed))
-        x = F.relu(self.fch(x_embed))
-        x = self.fout(x)
-        x = torch.nn.functional.softmax(x, dim=1)
-        return x
+    def forward(self, src):
+        # src = [src len, batch size]
+        # src=src[:,:,None]
+        # embedded = self.dropout(self.embedding(src[:,:,1].to(torch.int)))
+        embedded = self.dropout(self.embedding(src))
+        embedded = self.mixer(embedded)
+        # embedded = [src len, batch size, emb dim]
 
+        # embedded=torch.concatenate((embedded,src[:,:,:1]), axis=-1)
+        outputs, (hidden, cell) = self.rnn(embedded)
 
-    def accuracy(self, out, labels):
-        _, pred = torch.max(out, dim=1)
-        return torch.sum(pred == labels).item()
+        # outputs = [src len, batch size, hid dim * n directions]
+        # hidden = [n layers * n directions, batch size, hid dim]
+        # cell = [n layers * n directions, batch size, hid dim]
 
+        # outputs are always from the top hidden layer
 
-
-class CNN_Classifier(nn.Module):
-    """
-    simple classifier
-    """
-    def __init__(self):
-        super(CNN_Classifier,  self).__init__()
-        # 1 input image channel, 6 output channels, 5x5 square convolution
-        # kernel
-        # self.Input_size = Input_size
-        # self.history_length = history_length
-        # self.output_size = output_size
-        # self.hidden_dim = hidden_dim
-        # self.n_layers = n_layers
-
-        # self.conv1 = nn.Conv2d(3, 6, 5)
-        # self.pool = nn.MaxPool2d(3, 3)
-        # self.conv2 = nn.Conv2d(6, 16, 5)
-
-        self.features = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=4, kernel_size=10, stride=1, padding=1),
-            nn.MaxPool2d(1, 5), nn.ReLU(inplace=True), nn.BatchNorm2d(4),
-            nn.Conv2d(in_channels=4, out_channels=20, kernel_size=10, stride=1, padding=1),
-            nn.MaxPool2d(1, 5), nn.ReLU(inplace=True), nn.BatchNorm2d(20),
-        )
+        return hidden, cell
 
 
+class Decoder(nn.Module):
+    def __init__(self, output_dim, emb_dim, hid_dim, n_layers, dropout):
+        super().__init__()
+
+        self.output_dim = output_dim
+        self.hid_dim = hid_dim
+        self.n_layers = n_layers
+
+        self.embedding = nn.Embedding(output_dim, emb_dim)
+
+        self.rnn = nn.LSTM(emb_dim, hid_dim, n_layers, dropout=dropout)
+
+        self.fc_out = nn.Linear(hid_dim, output_dim)
+
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, input, hidden, cell):
+        # input = [batch size]
+        # hidden = [n layers * n directions, batch size, hid dim]
+        # cell = [n layers * n directions, batch size, hid dim]
+
+        # n directions in the decoder will both always be 1, therefore:
+        # hidden = [n layers, batch size, hid dim]
+        # context = [n layers, batch size, hid dim]
+
+        input = input.unsqueeze(0)
+
+        # input = [1, batch size]
+
+        embedded = self.dropout(self.embedding(input))
+
+        # embedded = [1, batch size, emb dim]
+
+        output, (hidden, cell) = self.rnn(embedded, (hidden, cell))
+
+        # output = [seq len, batch size, hid dim * n directions]
+        # hidden = [n layers * n directions, batch size, hid dim]
+        # cell = [n layers * n directions, batch size, hid dim]
+
+        # seq len and n directions will always be 1 in the decoder, therefore:
+        # output = [1, batch size, hid dim]
+        # hidden = [n layers, batch size, hid dim]
+        # cell = [n layers, batch size, hid dim]
+
+        prediction = self.fc_out(output.squeeze(0))
+
+        # prediction = [batch size, output dim]
+
+        return prediction, hidden, cell
 
 
-    def forward(self, x):
-        x = self.features(x)
-        x = torch.flatten(x, 1)  # flatten all dimensions except batch
-        # print(x.shape)
-        x = F.relu(self.fc1(x))
-        # print(x.shape)
-        # x = F.relu(self.fc2(x))
-        # x = torch.nn.functional.softmax(x, dim=1)
-        return x
+class Seq2Seq(nn.Module):
+    def __init__(self, encoder, decoder, device):
+        super().__init__()
+
+        self.encoder = encoder
+        self.decoder = decoder
+        self.device = device
+
+        assert encoder.hid_dim == decoder.hid_dim, \
+            "Hidden dimensions of encoder and decoder must be equal!"
+        assert encoder.n_layers == decoder.n_layers, \
+            "Encoder and decoder must have equal number of layers!"
+
+    def forward(self, src, trg, teacher_forcing_ratio=1):
+        # src = [src len, batch size]
+        # trg = [trg len, batch size]
+        # teacher_forcing_ratio is probability to use teacher forcing
+        # e.g. if teacher_forcing_ratio is 0.75 we use ground-truth inputs 75% of the time
+
+        batch_size = trg.shape[1]
+        trg_len = trg.shape[0]
+        trg_vocab_size = self.decoder.output_dim
+
+        # tensor to store decoder outputs
+        outputs = torch.zeros(trg_len, batch_size, trg_vocab_size).to(self.device)
+
+        # last hidden state of the encoder is used as the initial hidden state of the decoder
+        hidden, cell = self.encoder(src)
+
+        # first input to the decoder is the first tokens
+        input = trg[0, :]
+
+        for t in range(1, trg_len):
+            # insert input token embedding, previous hidden and previous cell states
+            # receive output tensor (predictions) and new hidden and cell states
+            output, hidden, cell = self.decoder(input, hidden, cell)
+
+            # place predictions in a tensor holding predictions for each token
+            outputs[t] = output
+
+            # decide if we are going to use teacher forcing or not
+            teacher_force = random.random() < teacher_forcing_ratio
+
+            # get the highest predicted token from our predictions
+            top1 = output.argmax(1)
+
+            # if teacher forcing, use actual next token as next input
+            # if not, use predicted token
+            input = trg[t] if teacher_force else top1
+
+        return outputs
 
 
+
+def train(model, iterator, optimizer, criterion, clip, vocab_size):
+    model.train()
+
+    epoch_loss = 0
+    epoch_acc = 0#np.zeros((vocab_size, vocab_size))
+    epoch_conf =  np.zeros((vocab_size, vocab_size))
+    for i, batch in enumerate(iterator):
+        src ,trg = batch
+        src=torch.swapaxes(src,0,1)
+        trg = torch.swapaxes(trg, 0, 1)
+
+        optimizer.zero_grad()
+
+        output = model(src, trg)
+
+        # trg = [trg len, batch size]
+        # output = [trg len, batch size, output dim]
+
+        output_dim = output.shape[-1]
+
+        output = output[1:].reshape(-1, output_dim)
+        trg = trg[1:].reshape([-1,])
+
+        # trg = [(trg len - 1) * batch size]
+        # output = [(trg len - 1) * batch size, output dim]
+
+        loss = criterion(output, trg)
+
+        loss.backward()
+
+        torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
+
+        optimizer.step()
+
+        epoch_loss += loss.item()
+
+        epoch_acc += accuracy_score(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(), trg.to(torch.int).detach().cpu().numpy())
+        # epoch_conf += confusion_matrix(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(),
+        #                          trg.to(torch.int).detach().cpu().numpy())
+
+    return epoch_loss / len(iterator), epoch_acc / len(iterator), epoch_conf / len(iterator)
+
+
+def evaluate(model, iterator, criterion, vocab_size):
+    model.eval()
+
+    epoch_loss = 0
+    epoch_acc=0# np.zeros((vocab_size,vocab_size))
+    epoch_conf = np.zeros((vocab_size,vocab_size))
+    with torch.no_grad():
+        for i, batch in enumerate(iterator):
+            src ,trg= batch
+            src = torch.swapaxes(src, 0, 1)
+            trg = torch.swapaxes(trg, 0, 1)
+
+            output = model(src, trg, 0)  # turn off teacher forcing
+
+            # trg = [trg len, batch size]
+            # output = [trg len, batch size, output dim]
+
+            output_dim = output.shape[-1]
+
+            output = output[1:].reshape(-1, output_dim)
+            trg = trg[1:].reshape(-1,)
+
+            # trg = [(trg len - 1) * batch size]
+            # output = [(trg len - 1) * batch size, output dim]
+
+            loss = criterion(output, trg)
+
+            epoch_loss += loss.item()
+            epoch_acc +=accuracy_score(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(), trg.to(torch.int).detach().cpu().numpy())
+            # epoch_conf += confusion_matrix(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(),
+            #                             trg.to(torch.int).detach().cpu().numpy())
+
+    return epoch_loss / len(iterator), epoch_acc /len(iterator),epoch_conf /len(iterator),
+
+
+
+def epoch_time(start_time, end_time):
+    elapsed_time = end_time - start_time
+    elapsed_mins = int(elapsed_time / 60)
+    elapsed_secs = int(elapsed_time - (elapsed_mins * 60))
+    return elapsed_mins, elapsed_secs
+
+def init_weights(m):
+    for name, param in m.named_parameters():
+        nn.init.uniform_(param.data, -0.08, 0.08)
+
+
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
+class get_dataset(Dataset):
+
+    ''' create a dataset suitable for pytorch models'''
+    def __init__(self, data_in,data_out, device):
+        self.data_in = torch.tensor(data_in, dtype=torch.float32).to(device)
+        self.data_out = torch.tensor(data_out, dtype=torch.int64).to(device)
+
+    def __len__(self):
+        return len(self.data_in)
+
+    def __getitem__(self, index):
+        return [self.data_in[index], self.data_out[index]]
+
+def vec_translate(a, my_dict):
+   return np.vectorize(my_dict.__getitem__)(a)

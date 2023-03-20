@@ -219,7 +219,7 @@ def get_phonems_data(datasets_add,
         if len(current_sent) !=0:
             if clustering:
                 current_sent = vec_translate(current_sent, reindexing_dic)
-        if max_sentence_L != len(current_sent):
+        if len(current_sent)< max_sentence_L:
             dataset[ii, :] = np.concatenate(
                 [current_sent, (phones_code_dic['NAN'] * np.ones((max_sentence_L - len(current_sent),)))],
                 axis=0).astype('int')

@@ -1,6 +1,6 @@
 from data_utilities import *
 import matplotlib.pyplot as plt
-patient_id = 'DM1013'
+patient_id = 'DM1005'
 raw_denoised = 'raw'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
@@ -14,8 +14,8 @@ trials_id =trials_info_df.trial_id.to_numpy()
 saving_add = data_add +'/trials_'+raw_denoised+'/imgs_psd/'
 ''' gather all features for the phonemes and generate the dataset'''
 
-margin_bf=500
-window_after=1000
+margin_bf=1000
+window_after=2000
 
 for trial in trials_id:
     print(trial)
@@ -31,10 +31,22 @@ for trial in trials_id:
     X = np.mean(X[ :, -2:, :], axis=1).squeeze()  ##
     if trial==1:
         X_new = np.zeros((len(trials_id), window_after + margin_bf,X.shape[-1]))
-        X_new[trial-1,:,:]=X[speach_onset-margin_bf:speach_onset+window_after,:].squeeze()
+        if X[speach_onset-margin_bf:speach_onset+window_after,:].squeeze().shape[0] == margin_bf+window_after:
+            X_new[trial-1,:,:]=X[speach_onset-margin_bf:speach_onset+window_after,:].squeeze()
+        else:
+            aa_diff=margin_bf+window_after-X[speach_onset-margin_bf:speach_onset+window_after,:].squeeze().shape[0]
+            temp=np.concatenate([X[speach_onset-margin_bf:speach_onset+window_after,:].squeeze(), np.zeros((aa_diff,X.shape[1]))],axis=0)
+            X_new[trial - 1, :, :]=temp
     else:
-        X_new[trial-1, :, :] = X[speach_onset - margin_bf:speach_onset + window_after, :].squeeze()
-
+        if X[speach_onset - margin_bf:speach_onset + window_after, :].squeeze().shape[0] == margin_bf + window_after:
+            X_new[trial - 1, :, :] = X[speach_onset - margin_bf:speach_onset + window_after, :].squeeze()
+        else:
+            aa_diff = margin_bf + window_after - \
+                      X[speach_onset - margin_bf:speach_onset + window_after, :].squeeze().shape[0]
+            temp = np.concatenate(
+                [X[speach_onset - margin_bf:speach_onset + window_after, :].squeeze(), np.zeros((aa_diff, X.shape[1]))],
+                axis=0)
+            X_new[trial - 1, :, :] = temp
 list_ECOG_chn = data_list_trial[1].columns[data_list_trial[1].columns.str.contains("ecog")].to_list()
 chnl_number=len(list_ECOG_chn)
 window_inf=800
@@ -56,8 +68,9 @@ for ii_chd in range(chnl_number):
                                                              label='HI-DGD 95%', alpha=.5)
     plt.plot(xs_id, mean_sig, 'b', label='mean')
 
-    if ((np.nanmean(mean_sig[margin_bf:])<np.nanmean(mean_sig[:margin_bf]))
-            or (np.nanmax(np.abs(mean_sig))>200)
+    if (
+            # (np.nanmean(mean_sig[margin_bf:])<np.nanmean(mean_sig[:margin_bf]))
+             (np.nanmax(np.abs(mean_sig))>200)
             or (np.nanmin(np.abs(mean_sig))<1)):
         non_informative_chn_ids.append(ii_chd)
         plt.savefig(
