@@ -16,16 +16,16 @@ from torch.utils.data import Dataset
 
 
 class Encoder(nn.Module):
-    def __init__(self, input_dim, emb_dim, hid_dim, n_layers, dropout):
+    def __init__(self, input_dim, emb_dim, hid_dim, n_layers, dropout, bidirectional =False):
         super().__init__()
 
         self.hid_dim = hid_dim
         self.n_layers = n_layers
-
+        self.input_dim=input_dim
         # self.embedding = nn.Embedding(input_dim, emb_dim)
         self.embedding = nn.Linear(input_dim, emb_dim)
         self.mixer = nn.Linear(emb_dim, emb_dim)
-        self.rnn = nn.LSTM(emb_dim, hid_dim, n_layers, dropout=dropout)
+        self.rnn = nn.LSTM(emb_dim, hid_dim, n_layers, dropout=dropout, bidirectional =bidirectional )
 
         self.dropout = nn.Dropout(dropout)
 
@@ -50,7 +50,7 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, output_dim, emb_dim, hid_dim, n_layers, dropout):
+    def __init__(self, output_dim, emb_dim, hid_dim, n_layers, dropout,bidirectional ):
         super().__init__()
 
         self.output_dim = output_dim
@@ -59,9 +59,11 @@ class Decoder(nn.Module):
 
         self.embedding = nn.Embedding(output_dim, emb_dim)
 
-        self.rnn = nn.LSTM(emb_dim, hid_dim, n_layers, dropout=dropout)
-
-        self.fc_out = nn.Linear(hid_dim, output_dim)
+        self.rnn = nn.LSTM(emb_dim, hid_dim, n_layers, dropout=dropout, bidirectional =bidirectional )
+        if bidirectional:
+            self.fc_out = nn.Linear(2*hid_dim, output_dim)
+        else:
+            self.fc_out = nn.Linear(hid_dim, output_dim)
 
         self.dropout = nn.Dropout(dropout)
 
@@ -113,7 +115,7 @@ class Seq2Seq(nn.Module):
         assert encoder.n_layers == decoder.n_layers, \
             "Encoder and decoder must have equal number of layers!"
 
-    def forward(self, src, trg, teacher_forcing_ratio=1):
+    def forward(self, src, trg, teacher_forcing_ratio, decoder_pretraining):
         # src = [src len, batch size]
         # trg = [trg len, batch size]
         # teacher_forcing_ratio is probability to use teacher forcing
@@ -127,7 +129,12 @@ class Seq2Seq(nn.Module):
         outputs = torch.zeros(trg_len, batch_size, trg_vocab_size).to(self.device)
 
         # last hidden state of the encoder is used as the initial hidden state of the decoder
-        hidden, cell = self.encoder(src)
+        if decoder_pretraining:
+            src_empty=torch.zeros((src.shape[0],src.shape[1], self.encoder.input_dim))
+            hidden, cell = self.encoder(src_empty)
+        else:
+
+            hidden, cell = self.encoder(src)
 
         # first input to the decoder is the first tokens
         input = trg[0, :]
@@ -154,7 +161,7 @@ class Seq2Seq(nn.Module):
 
 
 
-def train(model, iterator, optimizer, criterion, clip, vocab_size):
+def train(model, iterator, optimizer, criterion, clip, vocab_size, decoder_pretraining=False):
     model.train()
 
     epoch_loss = 0
@@ -166,8 +173,10 @@ def train(model, iterator, optimizer, criterion, clip, vocab_size):
         trg = torch.swapaxes(trg, 0, 1)
 
         optimizer.zero_grad()
-
-        output = model(src, trg)
+        if decoder_pretraining:
+            output = model(src, trg,teacher_forcing_ratio=.5,decoder_pretraining=True)
+        else:
+            output = model(src, trg,teacher_forcing_ratio=.8, decoder_pretraining=False)
 
         # trg = [trg len, batch size]
         # output = [trg len, batch size, output dim]
@@ -191,13 +200,17 @@ def train(model, iterator, optimizer, criterion, clip, vocab_size):
         epoch_loss += loss.item()
 
         epoch_acc += accuracy_score(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(), trg.to(torch.int).detach().cpu().numpy())
-        # epoch_conf += confusion_matrix(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(),
-        #                          trg.to(torch.int).detach().cpu().numpy())
+        if decoder_pretraining:
+            pass
+        else:
+            # pass
+            epoch_conf += confusion_matrix(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(),
+                                 trg.to(torch.int).detach().cpu().numpy())
 
     return epoch_loss / len(iterator), epoch_acc / len(iterator), epoch_conf / len(iterator)
 
 
-def evaluate(model, iterator, criterion, vocab_size):
+def evaluate(model, iterator, criterion, vocab_size,decoder_pretraining=False):
     model.eval()
 
     epoch_loss = 0
@@ -209,7 +222,10 @@ def evaluate(model, iterator, criterion, vocab_size):
             src = torch.swapaxes(src, 0, 1)
             trg = torch.swapaxes(trg, 0, 1)
 
-            output = model(src, trg, 0)  # turn off teacher forcing
+            if decoder_pretraining:
+                output = model(src, trg,teacher_forcing_ratio=0, decoder_pretraining=True)
+            else:
+                output = model(src, trg,teacher_forcing_ratio=0, decoder_pretraining=False)
 
             # trg = [trg len, batch size]
             # output = [trg len, batch size, output dim]
@@ -226,8 +242,12 @@ def evaluate(model, iterator, criterion, vocab_size):
 
             epoch_loss += loss.item()
             epoch_acc +=accuracy_score(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(), trg.to(torch.int).detach().cpu().numpy())
-            # epoch_conf += confusion_matrix(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(),
-            #                             trg.to(torch.int).detach().cpu().numpy())
+            if decoder_pretraining:
+                pass
+            else:
+                # pass
+                epoch_conf += confusion_matrix(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(),
+                                        trg.to(torch.int).detach().cpu().numpy())
 
     return epoch_loss / len(iterator), epoch_acc /len(iterator),epoch_conf /len(iterator),
 
@@ -263,3 +283,14 @@ class get_dataset(Dataset):
 
 def vec_translate(a, my_dict):
    return np.vectorize(my_dict.__getitem__)(a)
+
+def apply_stress_remove(input_list):
+    output_list = []
+    if len(input_list) !=0:
+        for item in input_list[0]:
+            # print(item)
+            output_list.append(item[:2])
+    else:
+        pass
+
+    return [output_list]

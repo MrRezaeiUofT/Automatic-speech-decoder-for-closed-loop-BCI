@@ -2,8 +2,8 @@
 import scipy.io
 import numpy as np
 import pandas as pd
-from patsy import dmatrix, build_design_matrices
-from neural_utils import  calDesignMatrix_V2, calDesignMatrix_V4
+# from patsy import dmatrix, build_design_matrices
+# from neural_utils import  calDesignMatrix_V2, calDesignMatrix_V4
 import pickle
 import torch
 from torch.utils.data import Dataset
@@ -184,10 +184,10 @@ def listToString(s):
     # return string
     return (str1.join(s))
 
-def bspline_window(config_LSSM_MPP):
-    x = np.linspace(0, 1, config_LSSM_MPP['decode_length'])
-    y = dmatrix("bs(x, df=20, degree=10, include_intercept=True) - 1", {"x": x})
-    return y
+# def bspline_window(config_LSSM_MPP):
+#     x = np.linspace(0, 1, config_LSSM_MPP['decode_length'])
+#     y = dmatrix("bs(x, df=20, degree=10, include_intercept=True) - 1", {"x": x})
+#     return y
 
 def get_phonems_data(datasets_add,
                     clustering_id,
@@ -213,19 +213,19 @@ def get_phonems_data(datasets_add,
 
     phones_df_all['ph_temp'] = 1  # just for finding maximum length for sentences
     max_sentence_L = phones_df_all.groupby(['trial_id']).sum().ph_temp.max()
-    dataset = np.zeros((phones_df_all.trial_id.max(), max_sentence_L)).astype('int')
-    for ii in range(phones_df_all.trial_id.max()):
+    dataset = np.zeros((phones_df_all.trial_id.max(), max_sentence_L+1)).astype('int')
+    for ii in range(1,phones_df_all.trial_id.max()):
         current_sent = phones_df_all[phones_df_all.trial_id == ii].phoneme_id.to_numpy().astype('int')
         if len(current_sent) !=0:
             if clustering:
                 current_sent = vec_translate(current_sent, reindexing_dic)
         if len(current_sent)< max_sentence_L:
-            dataset[ii, :] = np.concatenate(
+            dataset[ii, 1:] = np.concatenate(
                 [current_sent, (phones_code_dic['NAN'] * np.ones((max_sentence_L - len(current_sent),)))],
                 axis=0).astype('int')
         else:
-            dataset[ii, :] = current_sent.astype('int')
-
+            dataset[ii, 1:] = current_sent.astype('int')
+    dataset[:,0]=phones_code_dic['NAN']
     data_in = dataset
     data_out = np.concatenate([dataset, (phones_code_dic['NAN'] * np.ones((dataset.shape[0], 1)))], axis=1)[:,
                1:].astype('int')
@@ -257,55 +257,55 @@ class prepare_phoneme_dataset(Dataset):
 
     def __getitem__(self, index):
         return [self.data_in[index], self.data_out[index]]
-
-def get_trial_data(data_add,trial, h_k,f_k, phones_code_dic, raw_denoised,tensor_enable,d_sample=10, del_sp_nan=True):
-    '''
-    get a batch of data and [re[are it for the model
-    :param data_add: data address
-    :param trial: trial id
-    :param h_k: length of history
-    :return:
-    '''
-    file_name = data_add + 'trials_'+raw_denoised+'/trial_' + str(trial) + '.pkl'
-    with open(file_name, "rb") as open_file:
-        data_list_trial = pickle.load(open_file)
-    data_list_trial[1] =data_list_trial[1].reset_index()
-    X_tr = np.swapaxes(data_list_trial[0], 2, 0)
-    # print(X_tr.shape)
-    if tensor_enable:
-        X_tr = X_tr.reshape([X_tr.shape[0], -1])
-
-        XDesign = calDesignMatrix_V2(X_tr, h_k + 1)
-    else:
-
-        XDesign = calDesignMatrix_V4(X_tr, h_k + 1, f_k,d_sample)
-
-    # print(XDesign.shape)
-
-    y_tr = data_list_trial[1][data_list_trial[1].columns[data_list_trial[1].columns.str.contains("id_onehot")]].to_numpy()
-    non_phoneme_onset = data_list_trial[1][data_list_trial[1].phoneme_onset == 0].index.to_numpy()
-    if del_sp_nan:
-        ''' delete 'sp' and 'NaN'  and non-onset_phonemes from dataset'''
-        sp_index = np.where(np.argmax(y_tr, axis=1) == phones_code_dic['SP'])[0]
-        nan_index = np.where(np.argmax(y_tr, axis=1) == phones_code_dic['NAN'])[0]
-        delet_phonemes_indx = np.unique(np.concatenate([nan_index, sp_index, non_phoneme_onset],axis=0))
-        XDesign = np.delete(XDesign, delet_phonemes_indx, 0)
-        y_tr = np.delete(y_tr, delet_phonemes_indx, 0)
-        if tensor_enable:
-            return torch.tensor(XDesign, dtype=torch.float32), torch.tensor(y_tr, dtype=torch.float32)
-        else:
-            return XDesign, y_tr
-    else:
-        ''' delete non-onset_phonemes from dataset'''
-
-        non_phoneme_onset = data_list_trial[1][data_list_trial[1].phoneme_onset == 0].index.to_numpy()
-        XDesign = np.delete(XDesign, non_phoneme_onset, 0)
-        y_tr = np.delete(y_tr, non_phoneme_onset, 0)
-        if tensor_enable:
-            return torch.tensor(XDesign, dtype=torch.float32), torch.tensor(y_tr, dtype=torch.float32)
-        else:
-            return XDesign, y_tr
-
+#
+# def get_trial_data(data_add,trial, h_k,f_k, phones_code_dic, raw_denoised,tensor_enable,d_sample=10, del_sp_nan=True):
+#     '''
+#     get a batch of data and [re[are it for the model
+#     :param data_add: data address
+#     :param trial: trial id
+#     :param h_k: length of history
+#     :return:
+#     '''
+#     file_name = data_add + 'trials_'+raw_denoised+'/trial_' + str(trial) + '.pkl'
+#     with open(file_name, "rb") as open_file:
+#         data_list_trial = pickle.load(open_file)
+#     data_list_trial[1] =data_list_trial[1].reset_index()
+#     X_tr = np.swapaxes(data_list_trial[0], 2, 0)
+#     # print(X_tr.shape)
+#     if tensor_enable:
+#         X_tr = X_tr.reshape([X_tr.shape[0], -1])
+#
+#         XDesign = calDesignMatrix_V2(X_tr, h_k + 1)
+#     else:
+#
+#         XDesign = calDesignMatrix_V4(X_tr, h_k + 1, f_k,d_sample)
+#
+#     # print(XDesign.shape)
+#
+#     y_tr = data_list_trial[1][data_list_trial[1].columns[data_list_trial[1].columns.str.contains("id_onehot")]].to_numpy()
+#     non_phoneme_onset = data_list_trial[1][data_list_trial[1].phoneme_onset == 0].index.to_numpy()
+#     if del_sp_nan:
+#         ''' delete 'sp' and 'NaN'  and non-onset_phonemes from dataset'''
+#         sp_index = np.where(np.argmax(y_tr, axis=1) == phones_code_dic['SP'])[0]
+#         nan_index = np.where(np.argmax(y_tr, axis=1) == phones_code_dic['NAN'])[0]
+#         delet_phonemes_indx = np.unique(np.concatenate([nan_index, sp_index, non_phoneme_onset],axis=0))
+#         XDesign = np.delete(XDesign, delet_phonemes_indx, 0)
+#         y_tr = np.delete(y_tr, delet_phonemes_indx, 0)
+#         if tensor_enable:
+#             return torch.tensor(XDesign, dtype=torch.float32), torch.tensor(y_tr, dtype=torch.float32)
+#         else:
+#             return XDesign, y_tr
+#     else:
+#         ''' delete non-onset_phonemes from dataset'''
+#
+#         non_phoneme_onset = data_list_trial[1][data_list_trial[1].phoneme_onset == 0].index.to_numpy()
+#         XDesign = np.delete(XDesign, non_phoneme_onset, 0)
+#         y_tr = np.delete(y_tr, non_phoneme_onset, 0)
+#         if tensor_enable:
+#             return torch.tensor(XDesign, dtype=torch.float32), torch.tensor(y_tr, dtype=torch.float32)
+#         else:
+#             return XDesign, y_tr
+#
 
 
 
