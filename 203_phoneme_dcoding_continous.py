@@ -1,19 +1,50 @@
-
 import torch.optim as optim
 import pickle
 import pandas as pd
 import math
 import time
+import matplotlib.pyplot as plt
+import seaborn as sns
 # import matplotlib.pyplot as plt
-
 from  deep_models import *
-
 from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader
+''''''
+def plot_sample_evaluate(model, iterator, sample_size, label):
+    model.eval()
+
+    with torch.no_grad():
+        for i, batch in enumerate(iterator):
+            src ,trg= batch
+            src = torch.swapaxes(src, 0, 1)
+            trg = torch.swapaxes(trg, 0, 1)
+            output = model(src, trg, 0,False)  # turn off teacher forcing
+
+            # trg = [trg len, batch size]
+            # output = [trg len, batch size, output dim]
+        for ii in np.random.randint(1,src.shape[1],sample_size):
+            fig, ax =plt.subplots( 2,1, sharex=True, sharey=True)
+
+            ax[0].stem(trg[:,ii].detach().cpu().numpy().squeeze(), 'b')
+            ax[0].set_title('true sentence sample-'+str(ii)+'-result for ' + label)
+            ax[1].stem(output.detach().cpu().numpy().argmax(axis=-1)[:, ii].squeeze(), 'r')
+            ax[1].set_title('predicted sentence sample'+str(ii)+' result for ' + label)
+
+def visualize_confMatrix(data,labels, title ):
+    df_cm = pd.DataFrame(np.log(data+1), columns=labels, index=labels)
+    df_cm.index.name = 'Actual'
+    df_cm.columns.name = 'Predicted'
+    plt.figure(figsize=(10, 7))
+    sns.set(font_scale=1.4)  # for label size
+    sns.heatmap(df_cm, cmap="Blues", annot=False, annot_kws={"size": 16})
+    plt.title(title)
+''' Constants'''
 downsampling_rate=25
 margin_bf=100
-from torch.utils.data import DataLoader
+clustering_phonemes = True
+clustering_phonemes_id = 3
 device = torch.device( 'cpu')
-patient_id = 'DM1005'
+patient_id = 'DM1007'
 raw_denoised = 'raw'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
@@ -24,8 +55,6 @@ trials_info_df=pd.read_csv(
         datasets_add + patient_id + '/' + 'sub-' + patient_id + '_ses-intraop_task-lombard_annot-produced-sentences.tsv',
         sep='\t')
 trials_id =trials_info_df.trial_id.to_numpy()
-clustering_phonemes = False
-clustering_phonemes_id = 4
 phonemes_dict_df = pd.read_csv(datasets_add + phonemes_dic_address)
 if clustering_phonemes:
     clr = 'clustering_' + str(clustering_phonemes_id)
@@ -127,9 +156,9 @@ X_new=np.delete(X_new,non_inf_chnnel_id, axis=-1)
 position_chn=np.delete(position_chn,non_inf_chnnel_id, axis=1)
 
 ''' Preprocessing ECOGs data per channel'''
-for ii in range(X_new.shape[2]):
-    for jj in range(X_new.shape[0]):
-      X_new[jj,:,ii]=(X_new[jj,:,ii] -X_new[jj,:,ii].mean())/(X_new[jj,:,ii].std()+.5)
+# for ii in range(X_new.shape[2]):
+#     for jj in range(X_new.shape[0]):
+#       X_new[jj,:,ii]=(X_new[jj,:,ii] -X_new[jj,:,ii].mean())/(X_new[jj,:,ii].std()+.5)
 
 ''' train test trial split'''
 trial_train, trial_test = train_test_split(np.arange(X_new.shape[0]),test_size=.3,random_state=0,shuffle=True)
@@ -211,16 +240,16 @@ time_length = len(indx_cent)
 ''' build model'''
 INPUT_DIM = chn_size
 OUTPUT_DIM = vocab_size
-ENC_EMB_DIM = 50
-DEC_EMB_DIM = 50
-HID_DIM = max_phonemes_seq
+ENC_EMB_DIM = 100
+DEC_EMB_DIM = 100
+HID_DIM = 50
 N_LAYERS = 2
 BIDIRECTIONAL = True
 ENC_DROPOUT = 0.5
 DEC_DROPOUT = 0.5
 
 BATCH_SIZE = 100
-N_EPOCHS = 200
+N_EPOCHS = 500
 CLIP = 1
 
 enc = Encoder(INPUT_DIM, ENC_EMB_DIM, HID_DIM, N_LAYERS, ENC_DROPOUT,BIDIRECTIONAL)
@@ -285,32 +314,24 @@ for epoch in range(N_EPOCHS):
     print(f'\tPRE-Train Acc: {train_acc*100:.3f} |')
     print(f'\t PRE-Val. Acc: {valid_acc*100:.3f} |')
 
-import matplotlib.pyplot as plt
-import seaborn as sns
-def visualize_confMatrix(data,labels, title ):
-    df_cm = pd.DataFrame(np.log(data+1), columns=labels, index=labels)
-    df_cm.index.name = 'Actual'
-    df_cm.columns.name = 'Predicted'
-    plt.figure(figsize=(10, 7))
-    sns.set(font_scale=1.4)  # for label size
-    sns.heatmap(df_cm, cmap="Blues", annot=False, annot_kws={"size": 16})
-    plt.title(title)
 
 
-visualize_confMatrix(train_conf, labels_classes_reindex, 'pre-train')
-visualize_confMatrix(val_conf, labels_classes_reindex, 'pre-test')
-model.load_state_dict(torch.load('pre_model_best_valid_loss.pt'))
+# model.load_state_dict(torch.load('pre_model_best_valid_loss.pt'))
 test_loss, test_acc, test_conf = evaluate(model,
                                           pre_val_data_loader_valid,
                                           criterion, vocab_size,
                                           decoder_pretraining=True)
+visualize_confMatrix(train_conf, labels_classes_reindex, 'pre-train')
+visualize_confMatrix(val_conf, labels_classes_reindex, 'pre-test')
 print(f'| PRETest Loss: {test_loss:.3f} | Test PPL: {math.exp(test_loss):7.3f} |')
 print(f'| PRETest Acc: {test_acc*100:.3f} |')
 
 
 '''Actual training'''
-weights=np.ones((vocab_size,))
-# weights[-1]=0 # last phone is either NAN or SP which we try to ignore in our analysis
+uniques, counts = np.unique(out_down_tr, return_counts=True)
+counts=counts/counts.sum()
+weights=np.zeros((vocab_size,))
+weights[uniques]=1/counts
 weights=weights/weights.sum()
 criterion = nn.CrossEntropyLoss( weight=torch.tensor(weights,dtype=torch.float,device=device),ignore_index = np.arange(vocab_size)[-1])
 Dataset_phonemes_train = get_dataset(input_down_tr, out_down_tr, device)
@@ -331,9 +352,9 @@ for epoch in range(N_EPOCHS):
 
     epoch_mins, epoch_secs = epoch_time(start_time, end_time)
 
-    if valid_loss < best_valid_loss:
-        best_valid_loss = valid_loss
-        torch.save(model.state_dict(), 'final_model_best_val_loss.pt')
+    if valid_acc > best_valid_acc:
+        best_valid_acc = valid_acc
+        torch.save(model.state_dict(), 'final_model_best_val_acc.pt')
 
     print(f'Epoch: {epoch + 1:02} | Time: {epoch_mins}m {epoch_secs}s')
     print(f'\tTrain Loss: {train_loss:.3f} | Train PPL: {math.exp(train_loss):7.3f}')
@@ -343,7 +364,7 @@ for epoch in range(N_EPOCHS):
     print(f'\t Val. Acc: {valid_acc*100:.3f} |')
 
 
-model.load_state_dict(torch.load('final_model_best_val_loss.pt'))
+model.load_state_dict(torch.load('final_model_best_val_acc.pt'))
 test_loss, test_acc, test_conf = evaluate(model, test_data_loader, criterion, vocab_size,decoder_pretraining=False)
 print(f'| Test Loss: {test_loss:.3f} | Test PPL: {math.exp(test_loss):7.3f} |')
 print(f'| Test Acc: {test_acc*100:.3f} |')
@@ -352,27 +373,6 @@ print(f'| Test Acc: {test_acc*100:.3f} |')
 visualize_confMatrix(train_conf, labels_classes_reindex, 'train')
 visualize_confMatrix(val_conf, labels_classes_reindex, 'test')
 ''' visualize samples of prediction result for train and test'''
-def plot_sample_evaluate(model, iterator, sample_size, label):
-    model.eval()
-
-    with torch.no_grad():
-        for i, batch in enumerate(iterator):
-            src ,trg= batch
-            src = torch.swapaxes(src, 0, 1)
-            trg = torch.swapaxes(trg, 0, 1)
-            output = model(src, trg, 0,False)  # turn off teacher forcing
-
-            # trg = [trg len, batch size]
-            # output = [trg len, batch size, output dim]
-        for ii in np.random.randint(1,src.shape[1],sample_size):
-            fig, ax =plt.subplots( 2,1, sharex=True, sharey=True)
-
-            ax[0].stem(trg[:,ii].detach().cpu().numpy().squeeze(), 'b')
-            ax[0].set_title('true sentence sample-'+str(ii)+'-result for ' + label)
-            ax[1].stem(output.detach().cpu().numpy().argmax(axis=-1)[:, ii].squeeze(), 'r')
-            ax[1].set_title('predicted sentence sample'+str(ii)+' result for ' + label)
-
-
 plot_sample_evaluate(model, train_data_loader, 3, label='train')
 plot_sample_evaluate(model, test_data_loader, 3, label='test')
 #

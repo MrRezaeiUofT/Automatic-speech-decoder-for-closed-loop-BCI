@@ -174,9 +174,9 @@ def train(model, iterator, optimizer, criterion, clip, vocab_size, decoder_pretr
 
         optimizer.zero_grad()
         if decoder_pretraining:
-            output = model(src, trg,teacher_forcing_ratio=.5,decoder_pretraining=True)
+            output = model(src, trg,teacher_forcing_ratio=1,decoder_pretraining=True)
         else:
-            output = model(src, trg,teacher_forcing_ratio=.8, decoder_pretraining=False)
+            output = model(src, trg,teacher_forcing_ratio=.1, decoder_pretraining=False)
 
         # trg = [trg len, batch size]
         # output = [trg len, batch size, output dim]
@@ -203,8 +203,8 @@ def train(model, iterator, optimizer, criterion, clip, vocab_size, decoder_pretr
         if decoder_pretraining:
             pass
         else:
-            # pass
-            epoch_conf += confusion_matrix(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(),
+            pass
+        epoch_conf += confusion_matrix(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(),
                                  trg.to(torch.int).detach().cpu().numpy())
 
     return epoch_loss / len(iterator), epoch_acc / len(iterator), epoch_conf / len(iterator)
@@ -245,8 +245,8 @@ def evaluate(model, iterator, criterion, vocab_size,decoder_pretraining=False):
             if decoder_pretraining:
                 pass
             else:
-                # pass
-                epoch_conf += confusion_matrix(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(),
+                pass
+            epoch_conf += confusion_matrix(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(),
                                         trg.to(torch.int).detach().cpu().numpy())
 
     return epoch_loss / len(iterator), epoch_acc /len(iterator),epoch_conf /len(iterator),
