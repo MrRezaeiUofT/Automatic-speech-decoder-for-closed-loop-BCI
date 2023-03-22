@@ -9,6 +9,9 @@ import seaborn as sns
 from  deep_models import *
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
+
+from data_utilities import *
+
 ''''''
 def plot_sample_evaluate(model, iterator, sample_size, label):
     model.eval()
@@ -47,6 +50,7 @@ device = torch.device( 'cpu')
 patient_id = 'DM1007'
 raw_denoised = 'raw'
 datasets_add = './Datasets/'
+phonemes_dataset_address = 'LM/phonemes_df_harvard_dataset.csv' # 'LM/our_phonemes_df.csv' or 'LM/phonemes_df_harvard_dataset.csv'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 saved_result_path = datasets_add + patient_id + '/Results_'+raw_denoised+'/' +'phonems_psd/'
 save_result_path = datasets_add + patient_id + '/Results_'+raw_denoised+'/' +'phonems_psd/'
@@ -180,8 +184,6 @@ else:
     pass
 ''' load large dataset_for pre_train'''
 
-from data_utilities import *
-phonemes_dataset_address = 'LM/phonemes_df_harvard_dataset.csv' # 'LM/our_phonemes_df.csv' or 'LM/phonemes_df_harvard_dataset.csv'
 data_in_pre, data_out_pre, _ = get_phonems_data(datasets_add, clustering_id=clustering_phonemes_id,
                                                  clustering=clustering_phonemes,
                      phonemes_add= phonemes_dataset_address ,
@@ -362,7 +364,6 @@ for epoch in range(N_EPOCHS):
 
     print(f'\tTrain Acc: {train_acc*100:.3f} |')
     print(f'\t Val. Acc: {valid_acc*100:.3f} |')
-
 
 model.load_state_dict(torch.load('final_model_best_val_acc.pt'))
 test_loss, test_acc, test_conf = evaluate(model, test_data_loader, criterion, vocab_size,decoder_pretraining=False)
