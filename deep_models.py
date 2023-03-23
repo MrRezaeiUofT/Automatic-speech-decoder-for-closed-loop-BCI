@@ -2,7 +2,10 @@ import torch
 import torch.nn as nn
 from sklearn.metrics import accuracy_score
 import numpy as np
-
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pickle
+import pandas as pd
 import random
 from sklearn.metrics import confusion_matrix
 SEED = 1234
@@ -24,7 +27,7 @@ class Encoder(nn.Module):
         self.input_dim=input_dim
         # self.embedding = nn.Embedding(input_dim, emb_dim)
         self.embedding = nn.Linear(input_dim, emb_dim)
-        self.mixer = nn.Linear(emb_dim, emb_dim)
+        # self.mixer = nn.Linear(emb_dim, emb_dim)
         self.rnn = nn.LSTM(emb_dim, hid_dim, n_layers, dropout=dropout, bidirectional =bidirectional )
 
         self.dropout = nn.Dropout(dropout)
@@ -34,7 +37,7 @@ class Encoder(nn.Module):
         # src=src[:,:,None]
         # embedded = self.dropout(self.embedding(src[:,:,1].to(torch.int)))
         embedded = self.dropout(self.embedding(src))
-        embedded = self.mixer(embedded)
+        # embedded = self.mixer(embedded)
         # embedded = [src len, batch size, emb dim]
 
         # embedded=torch.concatenate((embedded,src[:,:,:1]), axis=-1)
@@ -107,7 +110,8 @@ class Seq2Seq(nn.Module):
         super().__init__()
 
         self.encoder = encoder
-        self.decoder = decoder
+        self.decoder= decoder
+        self.decoder= decoder
         self.device = device
 
         assert encoder.hid_dim == decoder.hid_dim, \
@@ -127,6 +131,7 @@ class Seq2Seq(nn.Module):
 
         # tensor to store decoder outputs
         outputs = torch.zeros(trg_len, batch_size, trg_vocab_size).to(self.device)
+        outputs_neural = torch.zeros(trg_len, batch_size, trg_vocab_size).to(self.device)
 
         # last hidden state of the encoder is used as the initial hidden state of the decoder
         if decoder_pretraining:
@@ -140,13 +145,15 @@ class Seq2Seq(nn.Module):
         input = trg[0, :]
 
         for t in range(1, trg_len):
+
             # insert input token embedding, previous hidden and previous cell states
             # receive output tensor (predictions) and new hidden and cell states
-            output, hidden, cell = self.decoder(input, hidden, cell)
 
+            output_neural, _, _ = self.decoder(trg[0, :], hidden, cell)
+            output, hidden, cell = self.decoder(input, hidden, cell)
             # place predictions in a tensor holding predictions for each token
             outputs[t] = output
-
+            outputs_neural[t]=output_neural
             # decide if we are going to use teacher forcing or not
             teacher_force = random.random() < teacher_forcing_ratio
 
@@ -157,7 +164,7 @@ class Seq2Seq(nn.Module):
             # if not, use predicted token
             input = trg[t] if teacher_force else top1
 
-        return outputs
+        return outputs, outputs_neural
 
 
 
@@ -174,9 +181,9 @@ def train(model, iterator, optimizer, criterion, clip, vocab_size, decoder_pretr
 
         optimizer.zero_grad()
         if decoder_pretraining:
-            output = model(src, trg,teacher_forcing_ratio=1,decoder_pretraining=True)
+            output, out_neural = model(src, trg,teacher_forcing_ratio=1,decoder_pretraining=decoder_pretraining)
         else:
-            output = model(src, trg,teacher_forcing_ratio=.1, decoder_pretraining=False)
+            output, out_neural = model(src, trg,teacher_forcing_ratio=.1, decoder_pretraining=decoder_pretraining)
 
         # trg = [trg len, batch size]
         # output = [trg len, batch size, output dim]
@@ -184,12 +191,15 @@ def train(model, iterator, optimizer, criterion, clip, vocab_size, decoder_pretr
         output_dim = output.shape[-1]
 
         output = output[1:].reshape(-1, output_dim)
+        out_neural = out_neural[1:].reshape(-1, output_dim)
         trg = trg[1:].reshape([-1,])
 
         # trg = [(trg len - 1) * batch size]
         # output = [(trg len - 1) * batch size, output dim]
-
-        loss = criterion(output, trg)
+        if decoder_pretraining:
+            loss = criterion(output, trg)
+        else:
+            loss = criterion(output, trg)+criterion(out_neural, trg)
 
         loss.backward()
 
@@ -203,14 +213,14 @@ def train(model, iterator, optimizer, criterion, clip, vocab_size, decoder_pretr
         if decoder_pretraining:
             pass
         else:
-            pass
-        epoch_conf += confusion_matrix(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(),
+            #pass
+            epoch_conf += confusion_matrix(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(),
                                  trg.to(torch.int).detach().cpu().numpy())
 
     return epoch_loss / len(iterator), epoch_acc / len(iterator), epoch_conf / len(iterator)
 
 
-def evaluate(model, iterator, criterion, vocab_size,decoder_pretraining=False):
+def evaluate(model, iterator, criterion, vocab_size, decoder_pretraining=False,no_LM=False):
     model.eval()
 
     epoch_loss = 0
@@ -222,10 +232,11 @@ def evaluate(model, iterator, criterion, vocab_size,decoder_pretraining=False):
             src = torch.swapaxes(src, 0, 1)
             trg = torch.swapaxes(trg, 0, 1)
 
-            if decoder_pretraining:
-                output = model(src, trg,teacher_forcing_ratio=0, decoder_pretraining=True)
+            if no_LM:
+                output, out_neural = model(src, trg,teacher_forcing_ratio=0, decoder_pretraining=decoder_pretraining)
             else:
-                output = model(src, trg,teacher_forcing_ratio=0, decoder_pretraining=False)
+
+                output, out_neural = model(src, trg,teacher_forcing_ratio=1, decoder_pretraining=decoder_pretraining)
 
             # trg = [trg len, batch size]
             # output = [trg len, batch size, output dim]
@@ -233,22 +244,35 @@ def evaluate(model, iterator, criterion, vocab_size,decoder_pretraining=False):
             output_dim = output.shape[-1]
 
             output = output[1:].reshape(-1, output_dim)
+            out_neural=out_neural[1:].reshape(-1, output_dim)
             trg = trg[1:].reshape(-1,)
 
             # trg = [(trg len - 1) * batch size]
             # output = [(trg len - 1) * batch size, output dim]
 
-            loss = criterion(output, trg)
-
-            epoch_loss += loss.item()
-            epoch_acc +=accuracy_score(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(), trg.to(torch.int).detach().cpu().numpy())
-            if decoder_pretraining:
-                pass
+            loss = criterion(output, trg)+criterion(out_neural, trg)
+            if no_LM:
+                loss = criterion(out_neural, trg)
+                epoch_acc += accuracy_score(out_neural.argmax(axis=1).to(torch.int).detach().cpu().numpy(),
+                                            trg.to(torch.int).detach().cpu().numpy())
+                if decoder_pretraining:
+                    epoch_conf = confusion_matrix(out_neural.argmax(axis=1).to(torch.int).detach().cpu().numpy(),
+                                                   trg.to(torch.int).detach().cpu().numpy())
+                else:
+                    # pass
+                    epoch_conf += confusion_matrix(out_neural.argmax(axis=1).to(torch.int).detach().cpu().numpy(),
+                                            trg.to(torch.int).detach().cpu().numpy())
             else:
-                pass
-            epoch_conf += confusion_matrix(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(),
-                                        trg.to(torch.int).detach().cpu().numpy())
 
+                epoch_acc +=accuracy_score(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(), trg.to(torch.int).detach().cpu().numpy())
+                if decoder_pretraining:
+                    epoch_conf = confusion_matrix(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(),
+                                                   trg.to(torch.int).detach().cpu().numpy())
+                else:
+                    # pass
+                    epoch_conf += confusion_matrix(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(),
+                                            trg.to(torch.int).detach().cpu().numpy())
+            epoch_loss += loss.item()
     return epoch_loss / len(iterator), epoch_acc /len(iterator),epoch_conf /len(iterator),
 
 
@@ -294,3 +318,51 @@ def apply_stress_remove(input_list):
         pass
 
     return [output_list]
+
+def plot_sample_evaluate(save_result_path,model, iterator, label,no_LM=False):
+    model.eval()
+
+    with torch.no_grad():
+        for i, batch in enumerate(iterator):
+            src ,trg= batch
+            src = torch.swapaxes(src, 0, 1)
+            trg = torch.swapaxes(trg, 0, 1)
+            output,output_neural = model(src, trg, 0,False)  # turn off teacher forcing
+
+            # trg = [trg len, batch size]
+            # output = [trg len, batch size, output dim]
+        for ii in np.arange(1,src.shape[1]):
+            fig, ax =plt.subplots( 2,1, sharex=True, sharey=True)
+
+            ax[0].stem(trg[:,ii].detach().cpu().numpy().squeeze(), 'b')
+            ax[0].set_title('true sentence sample-'+str(ii)+'-result for ' + label)
+            if no_LM:
+                ax[1].stem(output_neural.detach().cpu().numpy().argmax(axis=-1)[:, ii].squeeze(), 'r')
+            else:
+
+                ax[1].stem(output.detach().cpu().numpy().argmax(axis=-1)[:, ii].squeeze(), 'r')
+            ax[1].set_title('predicted sentence sample'+str(ii)+' result for ' + label)
+            plt.savefig(save_result_path + 'predicted-sentence-sample'+str(ii)+' result for ' + label + '.png')
+            plt.savefig(save_result_path + 'predicted-sentence-sample'+str(ii)+' result for ' + label + '.svg', format='svg')
+            plt.close()
+def visualize_confMatrix(save_result_path, data,labels, title ):
+    df_cm = pd.DataFrame(np.log(data+1), columns=labels, index=labels)
+    df_cm.index.name = 'Actual'
+    df_cm.columns.name = 'Predicted'
+    plt.figure(figsize=(10, 7))
+    sns.set(font_scale=1.4)  # for label size
+    sns.heatmap(df_cm, cmap="Blues", annot=False, annot_kws={"size": 16})
+    plt.title(title)
+    plt.savefig(save_result_path + title + '.png')
+    plt.savefig(save_result_path + title+ '.svg',
+                format='svg')
+    plt.close()
+
+
+def get_balanced_weight_for_classifier(inputs, vocab_size):
+    uniques, counts = np.unique(inputs, return_counts = True)
+    counts = (counts+1) / counts.sum()
+    weights = np.zeros((vocab_size,))
+    weights[uniques.astype('int')] = 1 / counts
+    weights = weights / weights.sum()
+    return torch.tensor(weights,dtype=torch.float)

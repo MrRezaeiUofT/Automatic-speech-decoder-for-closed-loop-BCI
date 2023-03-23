@@ -36,7 +36,7 @@ else:
 if 'SP' in phones_code_dic:
     pass
 else:
-    phones_code_dic.update({'SP': len(phonemes_df.phoneme.unique())+1})
+    phones_code_dic.update({'SP': len(phonemes_df.phoneme.unique())})
 
 phonemes_df['phoneme_id'] = 0
 phonemes_df['phoneme_id'] = phonemes_df['phoneme'].apply(lambda x: phones_code_dic[x])
