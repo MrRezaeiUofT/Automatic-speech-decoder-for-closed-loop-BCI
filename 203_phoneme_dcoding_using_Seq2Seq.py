@@ -1,20 +1,21 @@
 import torch.optim as optim
 import math
 import time
-from  deep_models import *
+from  VRNN_model import *
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
 from data_utilities import *
 ''' Constants'''
 downsampling_rate=25
 margin_bf=100
-clustering_phonemes = False
-clustering_phonemes_id = 1
-device = torch.device( 'cpu')
-patient_id = 'DM1007'
+clustering_phonemes = True
+clustering_phonemes_id = 3
+device = torch.device( 'cuda')
+patient_id = 'DM1008'
 raw_denoised = 'raw'
 datasets_add = './Datasets/'
 phonemes_dataset_address = 'LM/phonemes_df_harvard_dataset.csv' # 'LM/our_phonemes_df.csv' or 'LM/phonemes_df_harvard_dataset.csv'
+save_result_path = datasets_add + patient_id + '/Results_'+raw_denoised+'/' +'phonems_psd/Seq2Seq/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
 saved_result_path = datasets_add + patient_id + '/Results_'+raw_denoised+'/' +'phonems_psd/'
 phonemes_dic_address = 'LM/phonemes_df_harvard_dataset_phonemes_dic.csv'
@@ -182,28 +183,30 @@ time_length = len(indx_cent)
 
 
 ''' build model'''
-INPUT_DIM = chn_size
-OUTPUT_DIM = vocab_size
-ENC_EMB_DIM = 10
-DEC_EMB_DIM = 10
-HID_DIM = 100
-N_LAYERS = 2
+
+
+ENC_EMB_DIM = 20
+DEC_EMB_DIM = 20
+HID_DIM = 200
+N_LAYERS = 1
 BIDIRECTIONAL = True
 ENC_DROPOUT = 0.5
 DEC_DROPOUT = 0.5
 
-BATCH_SIZE = 100
-N_EPOCHS = 300
+BATCH_SIZE = 200
+N_EPOCHS = 200
 CLIP = 1
 
-enc = Encoder(INPUT_DIM, ENC_EMB_DIM, HID_DIM, N_LAYERS, ENC_DROPOUT,BIDIRECTIONAL)
-dec = Decoder(OUTPUT_DIM, DEC_EMB_DIM, HID_DIM, N_LAYERS, DEC_DROPOUT,BIDIRECTIONAL)
-model = Seq2Seq(enc, dec, device).to(device)
+enc_neural = Encoder(chn_size, ENC_EMB_DIM, HID_DIM, N_LAYERS, ENC_DROPOUT,'neural', BIDIRECTIONAL)
+enc_sent= Encoder(vocab_size, ENC_EMB_DIM, HID_DIM, N_LAYERS, ENC_DROPOUT,'sent', BIDIRECTIONAL)
+dec = Decoder(vocab_size, DEC_EMB_DIM, HID_DIM, N_LAYERS, DEC_DROPOUT,BIDIRECTIONAL)
+model = Seq2Seq(enc_neural, enc_sent, dec, device).to(device)
 model.apply(init_weights)
-print(f'The Encoder model has {count_parameters(enc):,} trainable parameters')
+print(f'The Encoder neural model has {count_parameters(enc_neural):,} trainable parameters')
+print(f'The Encoder sentence model has {count_parameters(enc_sent):,} trainable parameters')
 print(f'The Decoder model has {count_parameters(dec):,} trainable parameters')
 print(f'The mixed model has {count_parameters(model):,} trainable parameters')
-optimizer = optim.Adam(model.parameters(), lr=5e-3)
+optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
 
 
@@ -211,17 +214,17 @@ optimizer = optim.Adam(model.parameters(), lr=5e-3)
 
 criterion = nn.CrossEntropyLoss( weight=get_balanced_weight_for_classifier(data_out_pre_reindexd, vocab_size).to(device=device),
                                  ignore_index = np.arange(vocab_size)[-1])
-# data_in_tr_pre,data_in_val_pre,data_out_tr_pre, data_out_val_pre= train_test_split(data_in_pre_reindexed,
-#                                                                                    data_out_pre_reindexd,
-#                                                                                    test_size=.3,
-#                                                                                    shuffle=True)
-Dataset_phonemes_pre_train = get_dataset(data_in_pre_reindexed, data_out_pre_reindexd, device)
-Dataset_phonemes_pre_val = get_dataset(data_in_pre_reindexed, data_in_pre_reindexed, device)
+data_in_tr_pre,data_in_val_pre,data_out_tr_pre, data_out_val_pre= train_test_split(data_in_pre_reindexed,
+                                                                                   data_out_pre_reindexd,
+                                                                                   test_size=.3,
+                                                                                   shuffle=True)
+Dataset_phonemes_pre_train = get_dataset(data_in_tr_pre, data_in_tr_pre, device)
+Dataset_phonemes_pre_val = get_dataset(data_in_val_pre, data_in_val_pre, device)
 pre_train_data_loader_train = DataLoader(Dataset_phonemes_pre_train, batch_size=100,shuffle=True)
 pre_val_data_loader_valid = DataLoader(Dataset_phonemes_pre_val, batch_size=data_in_pre_reindexed.shape[0],shuffle=True)
 best_valid_loss = float('inf')
 
-for epoch in range(N_EPOCHS//5):
+for epoch in range(N_EPOCHS):
 
     start_time = time.time()
     train_loss, train_acc, train_conf = train(model,
@@ -243,7 +246,7 @@ test_loss, test_acc, test_conf = evaluate(model,
                                           criterion, vocab_size,
                                           decoder_pretraining=True)
 
-visualize_confMatrix(test_conf, labels_classes_reindex[:], 'pre-test')
+visualize_confMatrix(save_result_path,test_conf[:-1,:-1], labels_classes_reindex[:-1], 'pre-test')
 print(f'| PRETest Loss: {test_loss:.3f} | Test PPL: {math.exp(test_loss):7.3f} |')
 print(f'| PRETest Acc: {test_acc*100:.3f} |')
 
@@ -254,7 +257,8 @@ criterion = nn.CrossEntropyLoss( weight=get_balanced_weight_for_classifier(out_d
 Dataset_phonemes_train = get_dataset(input_down_tr, out_down_tr, device)
 Dataset_phonemes_test = get_dataset(input_down_te, out_down_te, device)
 train_data_loader = DataLoader(Dataset_phonemes_train, batch_size=BATCH_SIZE,shuffle=True)
-test_data_loader = DataLoader(Dataset_phonemes_test, batch_size=BATCH_SIZE,shuffle=False)
+train_data_loader_eval = DataLoader(Dataset_phonemes_train, batch_size=input_down_tr.shape[0],shuffle=True)
+test_data_loader = DataLoader(Dataset_phonemes_test, batch_size=input_down_te.shape[0],shuffle=False)
 best_valid_loss = float('inf')
 best_valid_acc = 0
 
@@ -270,6 +274,10 @@ for epoch in range(N_EPOCHS):
         best_valid_acc = valid_acc
         torch.save(model.state_dict(), 'final_model_best_val_acc.pt')
 
+    if valid_loss < best_valid_loss:
+        best_valid_loss = valid_loss
+        torch.save(model.state_dict(), 'final_model_best_val_loss.pt')
+
     print(f'Epoch: {epoch + 1:02} | Time: {epoch_mins}m {epoch_secs}s')
     print(f'\tTrain Loss: {train_loss:.3f} | Train PPL: {math.exp(train_loss):7.3f}')
     print(f'\t Val. Loss: {valid_loss:.3f} |  Val. PPL: {math.exp(valid_loss):7.3f}')
@@ -278,10 +286,10 @@ for epoch in range(N_EPOCHS):
     print(f'\t Val. Acc: {valid_acc*100:.3f} |')
 
 ''' final result with language model'''
-save_result_path = datasets_add + patient_id + '/Results_'+raw_denoised+'/' +'phonems_psd/Seq2Seq/'
+
 model.load_state_dict(torch.load('final_model_best_val_acc.pt'))
 train_loss, train_acc, train_conf = evaluate(model,
-                                          train_data_loader,
+                                          train_data_loader_eval,
                                           criterion,
                                           vocab_size,
                                           decoder_pretraining=False,
@@ -290,7 +298,7 @@ train_loss, train_acc, train_conf = evaluate(model,
 print(f'| Train Loss with LM: {train_loss:.3f} | Test PPL: {math.exp(train_loss):7.3f} |')
 print(f'| Train Acc with LM: {train_acc*100:.3f} |')
 
-visualize_confMatrix(save_result_path,train_conf, labels_classes_reindex, 'train')
+visualize_confMatrix(save_result_path,train_conf[:-1,:-1], labels_classes_reindex[:-1], 'train')
 # plot_sample_evaluate(save_result_path, model, train_data_loader, label='train')
 
 
@@ -304,18 +312,8 @@ print(f'| Test Loss with LM: {test_loss:.3f} | Test PPL: {math.exp(test_loss):7.
 print(f'| Test Acc with LM: {test_acc*100:.3f} |')
 
 
-visualize_confMatrix(save_result_path,test_conf, labels_classes_reindex, 'test-with-LM')
+visualize_confMatrix(save_result_path,test_conf[:-1,:-1], labels_classes_reindex[:-1], 'test-with-LM')
 # plot_sample_evaluate(save_result_path,model, test_data_loader, label='test-with-LM')
 #
 
-''' final result with NO-language model'''
-test_loss, test_acc, test_conf = evaluate(model,
-                                          test_data_loader,
-                                          criterion,
-                                          vocab_size,
-                                          decoder_pretraining=False,
-                                          no_LM=True)
-print(f'| Test Loss NO LM: {test_loss:.3f} | Test PPL: {math.exp(test_loss):7.3f} |')
-print(f'| Test Acc NO LM: {test_acc*100:.3f} |')
-visualize_confMatrix(save_result_path,test_conf, labels_classes_reindex, 'test-no-LM')
-# plot_sample_evaluate(save_result_path,model, test_data_loader, label='test-no-LM',no_LM=True)
+

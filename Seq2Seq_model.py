@@ -135,7 +135,7 @@ class Seq2Seq(nn.Module):
 
         # last hidden state of the encoder is used as the initial hidden state of the decoder
         if decoder_pretraining:
-            src_empty=torch.zeros((src.shape[0],src.shape[1], self.encoder.input_dim))
+            src_empty=torch.zeros((src.shape[0],src.shape[1], self.encoder.input_dim)).to(self.device)
             hidden, cell = self.encoder(src_empty)
         else:
 
@@ -183,7 +183,7 @@ def train(model, iterator, optimizer, criterion, clip, vocab_size, decoder_pretr
         if decoder_pretraining:
             output, out_neural = model(src, trg,teacher_forcing_ratio=1,decoder_pretraining=decoder_pretraining)
         else:
-            output, out_neural = model(src, trg,teacher_forcing_ratio=.1, decoder_pretraining=decoder_pretraining)
+            output, out_neural = model(src, trg,teacher_forcing_ratio=.0, decoder_pretraining=decoder_pretraining)
 
         # trg = [trg len, batch size]
         # output = [trg len, batch size, output dim]
@@ -213,9 +213,9 @@ def train(model, iterator, optimizer, criterion, clip, vocab_size, decoder_pretr
         if decoder_pretraining:
             pass
         else:
-            #pass
-            epoch_conf += confusion_matrix(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(),
-                                 trg.to(torch.int).detach().cpu().numpy())
+            pass
+            # epoch_conf += confusion_matrix(output.argmax(axis=1).to(torch.int).detach().cpu().numpy(),
+            #                      trg.to(torch.int).detach().cpu().numpy())
 
     return epoch_loss / len(iterator), epoch_acc / len(iterator), epoch_conf / len(iterator)
 
@@ -236,7 +236,7 @@ def evaluate(model, iterator, criterion, vocab_size, decoder_pretraining=False,n
                 output, out_neural = model(src, trg,teacher_forcing_ratio=0, decoder_pretraining=decoder_pretraining)
             else:
 
-                output, out_neural = model(src, trg,teacher_forcing_ratio=1, decoder_pretraining=decoder_pretraining)
+                output, out_neural = model(src, trg,teacher_forcing_ratio=0, decoder_pretraining=decoder_pretraining)
 
             # trg = [trg len, batch size]
             # output = [trg len, batch size, output dim]
@@ -250,7 +250,7 @@ def evaluate(model, iterator, criterion, vocab_size, decoder_pretraining=False,n
             # trg = [(trg len - 1) * batch size]
             # output = [(trg len - 1) * batch size, output dim]
 
-            loss = criterion(output, trg)+criterion(out_neural, trg)
+            loss = criterion(output, trg)
             if no_LM:
                 loss = criterion(out_neural, trg)
                 epoch_acc += accuracy_score(out_neural.argmax(axis=1).to(torch.int).detach().cpu().numpy(),

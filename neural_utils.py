@@ -101,6 +101,60 @@ def get_psd_features(total_data_df, psd_config, patient_id, saving_add):
     return  freqs
 
 
+def get_psd_features_direct(neural_df, times, trials_df, sentences_df, psd_config, saving_add):
+
+    margin_length = psd_config['margin_length']
+    baseline_length = psd_config['baseline_length']
+    sampling_freq = psd_config['sampling_freq']
+    times=times - sentences_df.onset[0]
+    sentences_df.onset = sentences_df.onset - sentences_df.onset[0]
+
+    for trial in trials_df.trial_id.unique():
+        print(trial)
+        # start_trial_time=trials_df.onset[trial]
+        # duration_trial = trials_df.duration[trial]
+        start_sent_time = sentences_df.onset[trial]
+        duration_sent = sentences_df.duration[trial]
+        # start_itg = trials_df.itg_onset[trial]
+        # duration_itg = trials_df.itg_duration[trial]
+        t_start=start_sent_time-2*margin_length/sampling_freq-baseline_length/sampling_freq
+        t_end=start_sent_time+duration_sent+margin_length/sampling_freq
+        # print(t_end-t_start-duration_sent)
+        indx_df = neural_df.iloc[np.where((times>=t_start) &
+                                          (times<=t_end))[0]].index
+        drop_indx = np.arange(0, baseline_length+margin_length)
+
+        trial_df = neural_df.loc[indx_df]
+        neural_data = np.expand_dims(np.transpose(trial_df.to_numpy()), axis=0)
+
+        neural_psd, freqs = psd_extractor(neural_data, psd_config,  np.arange(margin_length, baseline_length+margin_length), type='power')
+                # Baseline the output
+
+
+        if psd_config['smoothing']:
+                window = signal.windows.gaussian(psd_config['smoothing_window_size'],
+                                                 psd_config['smoothing_window_size'] / 8)
+                # window = signal.windows.hamming(PSD_config['smoothing_window_size'])
+                for ii in range(neural_psd.shape[0]):
+                    for jj in range(neural_psd.shape[1]):
+                        neural_psd[ii, jj, :] = np.convolve(neural_psd[ii, jj, :], window, 'same')
+        if psd_config['avg_freq_bands']:
+            neural_psd_band, freqs = feature_mapping(neural_psd, psd_config,freqs)
+        else:
+            neural_psd_band=neural_psd
+            freqs=1
+
+        neural_psd_band = np.delete(neural_psd_band, drop_indx, axis=-1)
+
+
+
+        file_name = saving_add + 'trial_' + str(trial) + '.pkl'
+        with  open(file_name, "wb") as open_file:
+            pickle.dump(neural_psd_band, open_file)
+
+
+    return  freqs
+
 def psd_extractor(neural_data, psd_config, index_baselines, type='power'):
     freqs = np.round(np.logspace(np.log10(psd_config['L_cut_freq']),np.log10(psd_config['H_cut_freq']),psd_config['numb_freq'])).astype('int')
     n_cycles = freqs#psd_config['L_cut_freq']
