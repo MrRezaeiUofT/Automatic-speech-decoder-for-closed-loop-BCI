@@ -223,7 +223,7 @@ CLIP = 1
 enc_neural = Encoder(chn_size, ENC_EMB_DIM, HID_DIM, N_LAYERS, ENC_DROPOUT,'neural', BIDIRECTIONAL)
 enc_sent= Encoder(vocab_size, ENC_EMB_DIM, HID_DIM, N_LAYERS, ENC_DROPOUT,'sent', BIDIRECTIONAL)
 dec = Decoder(vocab_size, DEC_EMB_DIM, HID_DIM, N_LAYERS, DEC_DROPOUT,BIDIRECTIONAL)
-model = Seq2Seq(enc_neural, enc_sent, dec, device).to(device)
+model = Seq2Seq(enc_neural, enc_sent, dec,0, device).to(device)
 model.apply(init_weights)
 print(f'The Encoder neural model has {count_parameters(enc_neural):,} trainable parameters')
 print(f'The Encoder sentence model has {count_parameters(enc_sent):,} trainable parameters')
