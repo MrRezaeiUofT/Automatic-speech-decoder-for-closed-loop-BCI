@@ -1,7 +1,7 @@
 from data_utilities import *
 from neural_utils import *
 
-patient_id = 'DM1005'
+patient_id = 'DM1008'
 raw_denoised = 'raw'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'

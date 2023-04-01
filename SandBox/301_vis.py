@@ -1,6 +1,6 @@
 from data_utilities import *
 import matplotlib.pyplot as plt
-patient_id = 'DM1005'
+patient_id = 'DM1008'
 raw_denoised = 'raw'
 datasets_add = './Datasets/'
 data_add = datasets_add + patient_id + '/' + 'Preprocessed_data/'
@@ -15,7 +15,7 @@ saving_add = data_add +'/trials_'+raw_denoised+'/imgs_psd/'
 ''' gather all features for the phonemes and generate the dataset'''
 
 margin_bf=500
-window_after=1000
+
 max_length_trial=0
 all_X=[]
 for trial in trials_id[:-1]:
@@ -65,7 +65,8 @@ for ii_chd in range(chnl_number):
     if (
             # (np.nanmean(mean_sig[margin_bf:])<np.nanmean(mean_sig[:margin_bf]))
              (np.nanmax(np.abs(mean_sig))>200)
-            or (np.nanmin(np.abs(mean_sig))<1)):
+            # or (np.nanmin(np.abs(mean_sig))<1)
+    ):
         non_informative_chn_ids.append(ii_chd)
         plt.savefig(
             save_result_path + '/all_chn/' + 'Speach_onset_lock_gamma-' + list_ECOG_chn[ii_chd] +'non-inf'+ '.png')

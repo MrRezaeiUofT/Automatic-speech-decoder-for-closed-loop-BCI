@@ -2,10 +2,7 @@ import torch
 import torch.nn as nn
 from sklearn.metrics import accuracy_score
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-import pickle
-import pandas as pd
+
 from torch.autograd import Variable
 import random
 from sklearn.metrics import confusion_matrix
@@ -56,7 +53,7 @@ class Encoder(nn.Module):
 
         # outputs are always from the top hidden layer
 
-        return hidden, cell
+        return hidden, cell, outputs
 
 
 class Decoder(nn.Module):
@@ -113,13 +110,14 @@ class Decoder(nn.Module):
 
 
 class Seq2Seq(nn.Module):
-    def __init__(self, encoder_neural, encoder_sentence, decoder, device):
+    def __init__(self, encoder_neural, encoder_sentence, decoder,max_hist_len, device):
         super().__init__()
 
         self.encoder_neural = encoder_neural
         self.encoder_sentence = encoder_sentence
         self.decoder= decoder
         self.device = device
+        self.max_hist_len=max_hist_len
 
         assert encoder_neural.hid_dim == decoder.hid_dim, \
             "Hidden dimensions of encoder neural and decoder must be equal!"
@@ -137,7 +135,7 @@ class Seq2Seq(nn.Module):
         # trg = [trg len, batch size]
         # teacher_forcing_ratio is probability to use teacher forcing
         # e.g. if teacher_forcing_ratio is 0.75 we use ground-truth inputs 75% of the time
-
+        neural_to_sent_rate=torch.floor(src.shape[0]/trg.shape[0])
         batch_size = trg.shape[1]
         trg_len = trg.shape[0]
         trg_vocab_size = self.decoder.output_dim
@@ -149,7 +147,7 @@ class Seq2Seq(nn.Module):
         # last hidden state of the encoder is used as the initial hidden state of the decoder
         if decoder_pretraining:
             # src_empty=torch.zeros((src.shape[0],src.shape[1], self.encoder.input_dim))
-            hidden_sent, cell_sent = self.encoder_sentence(src)
+            hidden_sent, cell_sent,outputs_encoder_sentence = self.encoder_sentence(src)
             # hidden = [batch size,n layers * n directions, hid dim]
             z = Variable(torch.randn(hidden_sent.shape)).to(self.device)
 
@@ -162,18 +160,23 @@ class Seq2Seq(nn.Module):
             # first input to the decoder is the first tokens
         else:
 
-            hidden_neural, cell_neural = self.encoder_neural(src)
+            hidden_neural, cell_neural, outputs_encoder_neural = self.encoder_neural(src)
             z = Variable(torch.randn(hidden_neural.shape)).to(self.device)
             mu_neural = self.context_to_mu(hidden_neural)
             logvar_neural = self.context_to_logvar(hidden_neural)
             std_neural = torch.exp(0.5 * logvar_neural)
             z = z * std_neural + mu_neural
 
-            hidden_sent, cell_sent = self.encoder_sentence(trg)
+            hidden_sent, cell_sent,outputs_encoder_sentence = self.encoder_sentence(trg)
             mu_sent = self.context_to_mu(hidden_sent)
             logvar_sent = self.context_to_logvar(hidden_sent)
             std_sent = torch.exp(0.5 * logvar_sent)
-            kld = (-0.5 * torch.sum(logvar_neural - torch.pow(mu_neural-mu_sent, 2) - torch.exp(logvar_neural) + 1, 1)).mean().squeeze()
+            # kld = (-0.5 * torch.sum(logvar_neural - torch.pow(mu_neural-mu_sent, 2) - torch.exp(logvar_neural) + 1, 1)).mean().squeeze()
+            kld = (-0.5 * torch.sum((logvar_neural-logvar_sent)
+                                    +self.encoder_neural.hid_dim
+                                    -torch.divide(torch.pow(mu_neural - mu_sent, 2), torch.exp(logvar_sent)+1e-5)
+                                    - torch.divide(torch.exp(logvar_neural),torch.exp(logvar_sent)+1e-5),
+                                    1)).mean().squeeze()
 
 
         input = trg[0, :]
@@ -218,7 +221,7 @@ def train(model, iterator, optimizer, criterion, clip, vocab_size, decoder_pretr
 
         optimizer.zero_grad()
         if decoder_pretraining:
-            output, out_neural, kld = model(src, trg,teacher_forcing_ratio=1,decoder_pretraining=decoder_pretraining)
+            output, out_neural, kld = model(src, trg,teacher_forcing_ratio=.8,decoder_pretraining=decoder_pretraining)
         else:
             output, out_neural,kld = model(src, trg,teacher_forcing_ratio=.5, decoder_pretraining=decoder_pretraining)
 
@@ -236,7 +239,7 @@ def train(model, iterator, optimizer, criterion, clip, vocab_size, decoder_pretr
         if decoder_pretraining:
             loss = criterion(output, trg)+.1*kld
         else:
-            loss = criterion(output, trg)+.1*kld
+            loss = criterion(output, trg)+.4*kld
 
         loss.backward()
 
@@ -356,44 +359,7 @@ def apply_stress_remove(input_list):
 
     return [output_list]
 
-def plot_sample_evaluate(save_result_path,model, iterator, label,no_LM=False):
-    model.eval()
 
-    with torch.no_grad():
-        for i, batch in enumerate(iterator):
-            src ,trg= batch
-            src = torch.swapaxes(src, 0, 1)
-            trg = torch.swapaxes(trg, 0, 1)
-            output,output_neural,_ = model(src, trg, 0,False)  # turn off teacher forcing
-
-            # trg = [trg len, batch size]
-            # output = [trg len, batch size, output dim]
-        for ii in np.arange(1,src.shape[1]):
-            fig, ax =plt.subplots( 2,1, sharex=True, sharey=True)
-
-            ax[0].stem(trg[:,ii].detach().cpu().numpy().squeeze(), 'b')
-            ax[0].set_title('true sentence sample-'+str(ii)+'-result for ' + label)
-            if no_LM:
-                ax[1].stem(output_neural.detach().cpu().numpy().argmax(axis=-1)[:, ii].squeeze(), 'r')
-            else:
-
-                ax[1].stem(output.detach().cpu().numpy().argmax(axis=-1)[:, ii].squeeze(), 'r')
-            ax[1].set_title('predicted sentence sample'+str(ii)+' result for ' + label)
-            plt.savefig(save_result_path + 'predicted-sentence-sample'+str(ii)+' result for ' + label + '.png')
-            plt.savefig(save_result_path + 'predicted-sentence-sample'+str(ii)+' result for ' + label + '.svg', format='svg')
-            plt.close()
-def visualize_confMatrix(save_result_path, data,labels, title ):
-    df_cm = pd.DataFrame(np.log(data+1), columns=labels, index=labels)
-    df_cm.index.name = 'Actual'
-    df_cm.columns.name = 'Predicted'
-    plt.figure(figsize=(10, 7))
-    sns.set(font_scale=1.4)  # for label size
-    sns.heatmap(df_cm, cmap="Blues", annot=False, annot_kws={"size": 16})
-    plt.title(title)
-    plt.savefig(save_result_path + title + '.png')
-    plt.savefig(save_result_path + title+ '.svg',
-                format='svg')
-    plt.close()
 
 
 def get_balanced_weight_for_classifier(inputs, vocab_size):

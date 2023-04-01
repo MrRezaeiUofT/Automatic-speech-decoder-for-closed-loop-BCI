@@ -2,6 +2,7 @@ import torch.optim as optim
 import math
 import time
 from  VRNN_model import *
+from VRNN_visualization import pca_analysis_latents, visualize_confMatrix, plot_sample_evaluate
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
 from data_utilities import *
@@ -33,6 +34,7 @@ else:
 saving_add = data_add +'/trials_'+raw_denoised+'/imgs_psd/'
 
 ''' gather all features for the phonemes and generate the dataset'''
+behv_list_feature=['resp_1','envaudio_p', 'audio_p']
 window_after=np.floor(trials_info_df.duration.to_numpy()*1000).max().astype('int')
 for trial in trials_id:
     print(trial)
@@ -46,22 +48,27 @@ for trial in trials_id:
     speach_onset=temp[np.where((temp_phoneme !='SP') & (temp_phoneme !='NAN'))][0]
     X = np.swapaxes(data_list_trial[0], 2, 0)
     X = np.mean(X[ :, -2:, :], axis=1).squeeze()  ##
+    Y=data_list_trial[1][behv_list_feature].to_numpy()
     if trial==1:
         X_new = np.zeros((len(trials_id), window_after + margin_bf,X.shape[-1]))
-
+        Y_new = np.zeros((len(trials_id), window_after + margin_bf, Y.shape[-1]))
 
         if X[speach_onset-margin_bf:speach_onset+window_after,:].squeeze().shape[0] == margin_bf+window_after:
             X_new[trial-1,:,:]=X[speach_onset-margin_bf:speach_onset+window_after,:].squeeze()
+            Y_new[trial - 1, :, :] = Y[speach_onset - margin_bf:speach_onset + window_after, :].squeeze()
 
         else:
             aa_diff=margin_bf+window_after-X[speach_onset-margin_bf:speach_onset+window_after,:].squeeze().shape[0]
             temp_X=np.concatenate([X[speach_onset-margin_bf:speach_onset+window_after,:].squeeze(), np.zeros((aa_diff,X.shape[1]))],axis=0)
             X_new[trial - 1, :, :]=temp_X
 
+            Y_new[trial - 1, :, :] = np.concatenate([Y[speach_onset-margin_bf:speach_onset+window_after,:].squeeze(), np.zeros((aa_diff,Y.shape[1]))],axis=0)
+
 
     else:
         if X[speach_onset - margin_bf:speach_onset + window_after, :].squeeze().shape[0] == margin_bf + window_after:
             X_new[trial - 1, :, :] = X[speach_onset - margin_bf:speach_onset + window_after, :].squeeze()
+            Y_new[trial - 1, :, :] = Y[speach_onset - margin_bf:speach_onset + window_after, :].squeeze()
         else:
             aa_diff = margin_bf + window_after - \
                       X[speach_onset - margin_bf:speach_onset + window_after, :].squeeze().shape[0]
@@ -69,6 +76,10 @@ for trial in trials_id:
                 [X[speach_onset - margin_bf:speach_onset + window_after, :].squeeze(), np.zeros((aa_diff, X.shape[1]))],
                 axis=0)
             X_new[trial - 1, :, :] = temp_X
+
+            Y_new[trial - 1, :, :] = np.concatenate(
+                [Y[speach_onset - margin_bf:speach_onset + window_after, :].squeeze(), np.zeros((aa_diff, Y.shape[1]))],
+                axis=0)
 
 
 ## X_new [trial, time, chn]
@@ -121,10 +132,12 @@ position_chn=np.delete(position_chn,non_inf_chnnel_id, axis=1)
 ''' train test trial split'''
 trial_train, trial_test = train_test_split(np.arange(X_new.shape[0]),test_size=.3,random_state=0,shuffle=True)
 inputs_train=X_new[trial_train]
+beh_train=Y_new[trial_train]
 pos_train=position_chn[trial_train]
 out_train=phonemes_info[trial_train]
 
 inputs_test=X_new[trial_test]
+beh_test=Y_new[trial_test]
 pos_test=position_chn[trial_test]
 out_test=phonemes_info[trial_test]
 
@@ -150,11 +163,14 @@ unique_vals_y= np.unique(np.concatenate([out_train,out_test],axis=0))
 labels_classes_reindex=np.array(list(phones_code_dic.keys()))[unique_vals_y.astype('int')]
 out_train_reindexed = np.zeros_like(out_train)
 out_test_reindexed = np.zeros_like(out_test)
+
 for count, value in enumerate(unique_vals_y):
     for ii in range(out_train.shape[0]):
         out_train_reindexed[ii,np.where(out_train[ii,:] == value)[0]] = count
+
     for ii in range(out_test.shape[0]):
         out_test_reindexed[ii,np.where(out_test[ii,:] == value)[0]] = count
+
 
 data_in_pre_reindexed = np.zeros_like(data_in_pre)
 data_out_pre_reindexd = np.zeros_like(data_out_pre)
@@ -169,13 +185,20 @@ input_down_tr=np.zeros((inputs_train.shape[0],len(indx_cent), inputs_train.shape
 out_down_tr=out_train_reindexed
 input_down_te=np.zeros((inputs_test.shape[0],len(indx_cent),inputs_test.shape[2]))
 out_down_te=out_test_reindexed
+
+beh_down_tr=np.zeros((beh_train.shape[0],len(indx_cent),beh_train.shape[2]))
+beh_down_te=np.zeros((beh_test.shape[0],len(indx_cent),beh_test.shape[2]))
 for count,ii_indx in enumerate(indx_cent):
     input_down_tr[:, count,:] = inputs_train[:,
                               ii_indx - downsampling_rate // 2:ii_indx + downsampling_rate // 2,:].mean(axis=1)
+    beh_down_tr[:, count, :] = beh_train[:,
+                                ii_indx - downsampling_rate // 2:ii_indx + downsampling_rate // 2, :].mean(axis=1)
 
 
     input_down_te[:, count,:] = inputs_test[:,
                               ii_indx - downsampling_rate // 2:ii_indx + downsampling_rate // 2,:].mean(axis=1)
+    beh_down_te[:, count, :] = beh_test[:,
+                                 ii_indx - downsampling_rate // 2:ii_indx + downsampling_rate // 2, :].mean(axis=1)
 
 vocab_size=np.int(len(np.unique(out_down_tr)))
 chn_size=len(list_ECOG_chn)-len(non_inf_chnnel_id)
@@ -189,7 +212,7 @@ ENC_EMB_DIM = 20
 DEC_EMB_DIM = 20
 HID_DIM = 200
 N_LAYERS = 1
-BIDIRECTIONAL = True
+BIDIRECTIONAL = False
 ENC_DROPOUT = 0.5
 DEC_DROPOUT = 0.5
 
@@ -315,5 +338,6 @@ print(f'| Test Acc with LM: {test_acc*100:.3f} |')
 visualize_confMatrix(save_result_path,test_conf[:-1,:-1], labels_classes_reindex[:-1], 'test-with-LM')
 # plot_sample_evaluate(save_result_path,model, test_data_loader, label='test-with-LM')
 #
+''' Analysis beh and latents'''
 
-
+pca_analysis_latents(model, input_down_tr, beh_down_tr, behv_list_feature,save_result_path, 5, 'pca_analysis_train')
